@@ -1,0 +1,7 @@
+# Pinned for the legacy MediaPipe "solutions" Hands API used by hand_counter.py.
+# mediapipe >= 0.10.30 dropped the bundled mp.solutions wrappers in favour of
+# the newer Tasks API, so we pin to the last line that still ships solutions.
+# That build also requires numpy < 2, so opencv is pinned to a matching wheel.
+mediapipe==0.10.21
+opencv-python==4.11.0.86
+numpy<2
