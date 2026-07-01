@@ -21,6 +21,8 @@ non-zero if any import fails or the camera cannot be opened.
 import argparse
 import sys
 
+import display
+
 
 def check_imports():
     """Import the two dependencies and print their versions."""
@@ -44,7 +46,7 @@ def check_imports():
     return ok
 
 
-def check_camera(index, show_window):
+def check_camera(index, show_window, scale=1.5):
     """Open the webcam at `index`, read frames, optionally show a preview."""
     import cv2
 
@@ -66,12 +68,17 @@ def check_camera(index, show_window):
             return True
 
         print("       showing live preview — press 'q' or Esc to close")
+        window = "KAN-15 camera check (q/Esc to quit)"
+        sized = False
         while True:
             ok, frame = cap.read()
             if not ok:
                 print("[warn] dropped a frame from the camera stream")
                 break
-            cv2.imshow("KAN-15 camera check (q/Esc to quit)", frame)
+            if not sized:
+                display.open_window(cv2, window, frame, scale)
+                sized = True
+            cv2.imshow(window, frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):  # 'q' or Esc
                 break
@@ -93,6 +100,11 @@ def main(argv=None):
         action="store_true",
         help="Headless check: grab a single frame without opening a GUI window.",
     )
+    parser.add_argument(
+        "--display-scale", type=float, default=1.5,
+        help="Preview window size as a multiple of the camera frame "
+             "(default 1.5). The window is resizable.",
+    )
     args = parser.parse_args(argv)
 
     print("Verifying OpenCV + MediaPipe environment...\n")
@@ -101,7 +113,8 @@ def main(argv=None):
         print("\nImport check failed. Run: pip install -r requirements.txt")
         return 1
 
-    if not check_camera(args.camera, show_window=not args.no_window):
+    if not check_camera(args.camera, show_window=not args.no_window,
+                        scale=args.display_scale):
         print(
             "\nCamera check failed. Make sure a webcam is connected, not in use "
             "by another app, and that this program has camera permission."

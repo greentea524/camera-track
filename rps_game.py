@@ -36,6 +36,7 @@ import random
 import sys
 import time
 
+import display
 from hand_counter import fingers_up
 
 GESTURES = ("rock", "paper", "scissors")
@@ -253,6 +254,9 @@ def run_game(args):
                    auto_advance=not args.manual)
     print("Rock-Paper-Scissors — SPACE for a new round, 'q'/Esc to quit.")
 
+    window = "Rock Paper Scissors (q/Esc to quit)"
+    sized = False
+
     try:
         while True:
             ok, frame = cap.read()
@@ -286,7 +290,10 @@ def run_game(args):
             view = game.update(gesture, now)
             draw_game_overlay(cv2, frame, view)
 
-            cv2.imshow("Rock Paper Scissors (q/Esc to quit)", frame)
+            if not sized:
+                display.open_window(cv2, window, frame, args.display_scale)
+                sized = True
+            cv2.imshow(window, frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
                 break
@@ -447,6 +454,9 @@ def main(argv=None):
     parser.add_argument("--manual", action="store_true",
                         help="Hold on each result until SPACE starts the next round "
                              "(default: auto-advance after --result-hold).")
+    parser.add_argument("--display-scale", type=float, default=1.5,
+                        help="Initial window size as a multiple of the camera "
+                             "frame (default 1.5). The window is resizable.")
     parser.add_argument("--no-flip", action="store_true",
                         help="Do not mirror the webcam image.")
     parser.add_argument("--self-test", action="store_true",

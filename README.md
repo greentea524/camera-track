@@ -22,7 +22,11 @@ Or launch any of them from a single menu with **`main.py`** (KAN-35).
 | `eye_tracker.py` | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32, 36). |
 | `rps_game.py` | Rock-Paper-Scissors gesture game (KAN-33–34). |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15). |
+| `display.py` | Shared resizable-preview-window helper. |
 | `requirements.txt` | Pinned dependencies. |
+
+Every app opens a **resizable** preview window (drag to resize) at 1.5× the
+camera frame by default; tune the initial size with `--display-scale`.
 
 ## Setup
 
@@ -77,6 +81,7 @@ App keywords: `hands`, `eyes`, `rps`, `check`.
 | `--window N` | `5` | Debounce window in frames |
 | `--no-flip` | off | Don't mirror the image |
 | `--no-debounce` | off | Show the raw per-frame count |
+| `--display-scale F` | `1.5` | Initial window size vs. camera frame (resizable) |
 | `--self-test` | — | Verify finger-detection logic without a camera |
 
 ### `eye_tracker.py` options
@@ -90,6 +95,7 @@ App keywords: `hands`, `eyes`, `rps`, `check`.
 | `--no-flip` | off | Don't mirror the image |
 | `--no-landmarks` | off | Don't draw the eye/iris mesh overlay |
 | `--no-gaze-arrow` | off | Don't draw the gaze arrow / reticle |
+| `--display-scale F` | `1.5` | Initial window size vs. camera frame (resizable) |
 | `--self-test` | — | Verify gaze/blink/drowsiness logic without a camera |
 
 ### `rps_game.py` options
@@ -103,6 +109,7 @@ App keywords: `hands`, `eyes`, `rps`, `check`.
 | `--seed N` | — | Seed the computer's moves for reproducibility |
 | `--manual` | off | Hold each result until SPACE starts the next round |
 | `--no-flip` | off | Don't mirror the image |
+| `--display-scale F` | `1.5` | Initial window size vs. camera frame (resizable) |
 | `--self-test` | — | Verify game logic without a camera |
 
 Press **SPACE** to start the next round (skips the result hold in auto mode; the

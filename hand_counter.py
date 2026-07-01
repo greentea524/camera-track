@@ -31,6 +31,8 @@ import argparse
 import collections
 import sys
 
+import display
+
 # MediaPipe Hands landmark indices (per the 21-point hand model).
 # Fingertip landmarks and the PIP joint two steps below each tip.
 FINGER_TIPS = {"index": 8, "middle": 12, "ring": 16, "pinky": 20}
@@ -134,6 +136,9 @@ def run(args):
     stabilizer = CountStabilizer(window=args.window)
     print("Running finger counter — press 'q' or Esc to quit.")
 
+    window = "Finger Counter (q/Esc to quit)"
+    sized = False
+
     try:
         while True:
             ok, frame = cap.read()
@@ -170,7 +175,10 @@ def run(args):
 
             draw_overlay(cv2, frame, total, per_hand)
 
-            cv2.imshow("Finger Counter (q/Esc to quit)", frame)
+            if not sized:
+                display.open_window(cv2, window, frame, args.display_scale)
+                sized = True
+            cv2.imshow(window, frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):  # KAN-21: clean exit
                 break
@@ -302,6 +310,11 @@ def main(argv=None):
     )
     parser.add_argument(
         "--no-debounce", action="store_true", help="Show the raw per-frame count."
+    )
+    parser.add_argument(
+        "--display-scale", type=float, default=1.5,
+        help="Initial window size as a multiple of the camera frame "
+             "(default 1.5). The window is resizable.",
     )
     parser.add_argument(
         "--self-test",

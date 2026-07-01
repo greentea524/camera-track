@@ -40,6 +40,8 @@ import collections
 import sys
 import time
 
+import display
+
 # --- KAN-25: eye + iris landmark indices -----------------------------------
 # MediaPipe Face Mesh returns 468 base landmarks; with refine_landmarks=True it
 # adds 10 iris points (468-477). Indices below follow MediaPipe's canonical
@@ -307,6 +309,9 @@ def run(args):
     no_blink = NoBlinkMonitor(alert_seconds=args.no_blink_seconds)
     print("Running eye tracker — press 'q' or Esc to quit.")
 
+    window = "Eye Tracker (q/Esc to quit)"
+    sized = False
+
     try:
         while True:
             ok, frame = cap.read()
@@ -346,7 +351,10 @@ def run(args):
 
             draw_overlay(cv2, frame, state)
 
-            cv2.imshow("Eye Tracker (q/Esc to quit)", frame)
+            if not sized:
+                display.open_window(cv2, window, frame, args.display_scale)
+                sized = True
+            cv2.imshow(window, frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):  # KAN-31: clean exit
                 break
@@ -571,6 +579,9 @@ def main(argv=None):
                         help="Do not draw the eye/iris mesh overlay.")
     parser.add_argument("--no-gaze-arrow", action="store_true",
                         help="Do not draw the gaze arrow / reticle.")
+    parser.add_argument("--display-scale", type=float, default=1.5,
+                        help="Initial window size as a multiple of the camera "
+                             "frame (default 1.5). The window is resizable.")
     parser.add_argument("--self-test", action="store_true",
                         help="Run logic checks without a camera, then exit.")
     args = parser.parse_args(argv)
