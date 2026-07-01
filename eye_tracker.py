@@ -499,7 +499,7 @@ def self_test():
     return 0 if all_ok else 1
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Real-time gaze/blink/drowsiness tracker (OpenCV + MediaPipe)."
     )
@@ -516,7 +516,7 @@ def main():
                         help="Do not draw the eye/iris mesh overlay.")
     parser.add_argument("--self-test", action="store_true",
                         help="Run logic checks without a camera, then exit.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.self_test:
         return self_test()

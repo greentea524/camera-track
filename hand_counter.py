@@ -286,7 +286,7 @@ def self_test():
     return 0 if all_ok else 1
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Real-time finger counter (OpenCV + MediaPipe). 'q' to quit."
     )
@@ -308,7 +308,7 @@ def main():
         action="store_true",
         help="Run finger-detection logic checks without a camera, then exit.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.self_test:
         return self_test()

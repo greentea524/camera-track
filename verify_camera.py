@@ -81,7 +81,7 @@ def check_camera(index, show_window):
         cv2.destroyAllWindows()
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Verify the OpenCV + MediaPipe environment and webcam access."
     )
@@ -93,7 +93,7 @@ def main():
         action="store_true",
         help="Headless check: grab a single frame without opening a GUI window.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     print("Verifying OpenCV + MediaPipe environment...\n")
 

@@ -9,15 +9,18 @@ Three real-time webcam apps built with **OpenCV** + **MediaPipe**:
   drowsiness, and no-blink/staring time from the eyes/irises via Face Mesh.
   Implements **KAN-24 → KAN-32**.
 - **`rps_game.py`** — play Rock-Paper-Scissors against the computer with hand
-  gestures, with a countdown and score tracker. Implements **KAN-33**.
+  gestures, with a countdown and score tracker. Implements **KAN-33 / KAN-34**.
+
+Or launch any of them from a single menu with **`main.py`** (KAN-35).
 
 ## Files
 
 | File | Purpose |
 |------|---------|
+| `main.py` | Menu launcher for all the apps (KAN-35). |
 | `hand_counter.py` | The finger-counting app (KAN-16–21). |
 | `eye_tracker.py` | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
-| `rps_game.py` | Rock-Paper-Scissors gesture game (KAN-33). |
+| `rps_game.py` | Rock-Paper-Scissors gesture game (KAN-33–34). |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15). |
 | `requirements.txt` | Pinned dependencies. |
 
@@ -33,7 +36,14 @@ python -m venv .venv
 
 ## Run
 
-All three apps need real camera + display hardware, so run them on your own machine:
+The apps need real camera + display hardware, so run them on your own machine.
+The easiest way is the menu launcher:
+
+```powershell
+.\.venv\Scripts\python.exe main.py             # pick an app from a menu
+```
+
+Or run any app directly (equivalent to picking it from the menu):
 
 ```powershell
 .\.venv\Scripts\python.exe hand_counter.py     # finger counter
@@ -41,7 +51,22 @@ All three apps need real camera + display hardware, so run them on your own mach
 .\.venv\Scripts\python.exe rps_game.py         # Rock-Paper-Scissors
 ```
 
-Press **`q`** or **Esc** in the window to quit.
+Press **`q`** or **Esc** in the window to quit (returns to the menu when
+launched via `main.py`).
+
+### `main.py` launcher (KAN-35)
+
+`main.py` imports the apps and dispatches to the one you pick — no camera is
+touched until an app actually starts, so the menu is instant. You can also skip
+the menu and launch by name or number, passing flags straight through to the app:
+
+```powershell
+.\.venv\Scripts\python.exe main.py eyes             # jump to the eye tracker
+.\.venv\Scripts\python.exe main.py 3 --seed 0       # RPS with a fixed RNG seed
+.\.venv\Scripts\python.exe main.py --self-test      # verify menu wiring, no camera
+```
+
+App keywords: `hands`, `eyes`, `rps`, `check`.
 
 ### `hand_counter.py` options
 

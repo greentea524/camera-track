@@ -431,7 +431,7 @@ def self_test():
     return 0 if all_ok else 1
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Rock-Paper-Scissors with webcam hand gestures (OpenCV + MediaPipe)."
     )
@@ -451,7 +451,7 @@ def main():
                         help="Do not mirror the webcam image.")
     parser.add_argument("--self-test", action="store_true",
                         help="Run game-logic checks without a camera, then exit.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.self_test:
         return self_test()
