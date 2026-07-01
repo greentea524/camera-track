@@ -1,6 +1,6 @@
 # camera-track — webcam vision toys
 
-Two real-time webcam apps built with **OpenCV** + **MediaPipe**:
+Three real-time webcam apps built with **OpenCV** + **MediaPipe**:
 
 - **`hand_counter.py`** — counts extended fingers (0–10) across up to two
   hands, overlaying the count and hand skeleton. Implements **KAN-15**
@@ -8,6 +8,8 @@ Two real-time webcam apps built with **OpenCV** + **MediaPipe**:
 - **`eye_tracker.py`** — tracks gaze direction, blinks (count + rate),
   drowsiness, and no-blink/staring time from the eyes/irises via Face Mesh.
   Implements **KAN-24 → KAN-32**.
+- **`rps_game.py`** — play Rock-Paper-Scissors against the computer with hand
+  gestures, with a countdown and score tracker. Implements **KAN-33**.
 
 ## Files
 
@@ -15,6 +17,7 @@ Two real-time webcam apps built with **OpenCV** + **MediaPipe**:
 |------|---------|
 | `hand_counter.py` | The finger-counting app (KAN-16–21). |
 | `eye_tracker.py` | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
+| `rps_game.py` | Rock-Paper-Scissors gesture game (KAN-33). |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15). |
 | `requirements.txt` | Pinned dependencies. |
 
@@ -30,11 +33,12 @@ python -m venv .venv
 
 ## Run
 
-Both apps need real camera + display hardware, so run them on your own machine:
+All three apps need real camera + display hardware, so run them on your own machine:
 
 ```powershell
 .\.venv\Scripts\python.exe hand_counter.py     # finger counter
 .\.venv\Scripts\python.exe eye_tracker.py      # gaze / blink / drowsiness
+.\.venv\Scripts\python.exe rps_game.py         # Rock-Paper-Scissors
 ```
 
 Press **`q`** or **Esc** in the window to quit.
@@ -62,10 +66,24 @@ Press **`q`** or **Esc** in the window to quit.
 | `--no-landmarks` | off | Don't draw the eye/iris mesh overlay |
 | `--self-test` | — | Verify gaze/blink/drowsiness logic without a camera |
 
+### `rps_game.py` options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--camera N` | `0` | Webcam index |
+| `--countdown F` | `3.0` | Countdown seconds before each round |
+| `--result-hold F` | `2.5` | Seconds to show each round's result |
+| `--window N` | `5` | Frames of gesture history used to lock in |
+| `--seed N` | — | Seed the computer's moves for reproducibility |
+| `--no-flip` | off | Don't mirror the image |
+| `--self-test` | — | Verify game logic without a camera |
+
 Each app's `--self-test` mode validates its detection logic against synthetic
 landmarks and needs no hardware — handy for CI or a quick sanity check. For the
 eye tracker it checks EAR (open vs. shut), gaze classification, single-blink
-debounce, the drowsiness duration threshold, and the no-blink timer.
+debounce, the drowsiness duration threshold, and the no-blink timer. For the RPS
+game it checks gesture classification, the winner table, and the round state
+machine (scoring once per round, replaying on an unclear gesture).
 
 ## How it maps to the tickets
 
@@ -102,7 +120,9 @@ debounce, the drowsiness duration threshold, and the no-blink timer.
   the seconds since the last blink, driven by `BlinkCounter`'s debounced event
   so it resets on exactly the same blinks. The overlay shows the running
   duration and turns amber with a "STARING?" flag past `--no-blink-seconds`
-  (default 10s), a proxy for reduced blink rate / eye strain.
+  (default 10s), a proxy for reduced blink rate / eye strain. It also tracks the
+  session's longest no-blink streak (`.longest`) and shows it as a green
+  "Best" top score.
 
 #### Robustness notes (KAN-31)
 
@@ -118,10 +138,31 @@ debounce, the drowsiness duration threshold, and the no-blink timer.
 - **EAR threshold** — `0.21` is a common default but is somewhat per-person;
   it's exposed as `--ear-threshold` for both blink and drowsiness logic.
 
+### RPS game — `rps_game.py` (KAN-33)
+
+- **Gesture detection** — `classify_gesture()` reuses `hand_counter.fingers_up()`
+  and looks only at the four fingers (thumb ignored, as it's the noisiest): all
+  curled = rock, all extended = paper, index+middle up with ring+pinky down =
+  scissors, anything else = unknown.
+- **Round loop** — `RPSGame` is a `wait-for-hand -> countdown -> lock-in ->
+  result -> repeat` state machine. It holds in a "Show your hand to start!"
+  state until a hand is detected, so the countdown never runs on an empty frame,
+  and each round returns there to re-arm. At the end of the countdown the
+  gesture is locked in as the mode of the last few frames (`GestureStabilizer`)
+  so a hand mid-transition isn't misread; an unclear/absent gesture replays the
+  round instead of scoring.
+- **Winner + score** — `decide_winner()` is the standard beats-table;
+  `ScoreBoard` tallies wins/losses/draws.
+- **Overlay** — `draw_game_overlay()` shows the score band, a big countdown
+  number, the live detected gesture, and the round result (You vs. CPU + outcome).
+- **Determinism** — the computer's moves come from an injectable `random.Random`,
+  so `--seed` (and the self-test) make rounds reproducible.
+
 ## ⚠️ Important: MediaPipe version
 
-Both apps use the **legacy `mediapipe.solutions` API** (`Hands` and
-`FaceMesh`). MediaPipe **0.10.30+ removed** the bundled `mp.solutions` wrappers
+All three apps use the **legacy `mediapipe.solutions` API** (`Hands` and
+`FaceMesh`; `rps_game.py` reuses the hand pipeline). MediaPipe **0.10.30+
+removed** the bundled `mp.solutions` wrappers
 in favour of the newer *Tasks* API (`HandLandmarker` / `FaceLandmarker`, which
 need a separate `.task` model file). The pinned **`mediapipe==0.10.21`** is the
 last release that still ships `solutions`. That build requires **numpy < 2**,

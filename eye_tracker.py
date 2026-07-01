@@ -235,6 +235,7 @@ class NoBlinkMonitor:
 
     def __init__(self, alert_seconds=10.0):
         self.alert_seconds = alert_seconds
+        self.longest = 0.0  # longest no-blink streak this session (a top score)
         self._last_blink_time = None
 
     def update(self, blinked, now=None):
@@ -244,7 +245,12 @@ class NoBlinkMonitor:
         # Start the clock on the first frame we see, then on every blink.
         if self._last_blink_time is None or blinked:
             self._last_blink_time = now
-        return now - self._last_blink_time
+        duration = now - self._last_blink_time
+        # Duration climbs monotonically until a blink resets it, so the running
+        # max over every frame is the longest streak's peak.
+        if duration > self.longest:
+            self.longest = duration
+        return duration
 
     def is_alerting(self, duration):
         """True when the no-blink duration has crossed the alert threshold."""
@@ -310,6 +316,7 @@ def run(args):
                     "drowsy": drowsy.update(ear, now),
                     "no_blink": no_blink_secs,
                     "staring": no_blink.is_alerting(no_blink_secs),
+                    "no_blink_best": no_blink.longest,
                 }
                 if not args.no_landmarks:
                     _draw_eye_landmarks(cv2, frame, results.multi_face_landmarks[0],
@@ -373,6 +380,8 @@ def draw_overlay(cv2, frame, state):
         nb_text += "  (STARING?)"
     cv2.putText(frame, nb_text, (w - 340, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
                 (0, 165, 255) if staring else (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(frame, f"Best: {state['no_blink_best']:.1f}s", (w - 340, 68),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
 
     # KAN-29/30: prominent drowsiness alert banner.
     if state["drowsy"]:
@@ -482,6 +491,7 @@ def self_test():
     check("no-blink grows while open", nb.update(False, now=5.0), 5.0)
     check("no-blink resets on blink", nb.update(True, now=6.0), 0.0)
     check("no-blink resumes after reset", nb.update(False, now=6.5), 0.5)
+    check("no-blink longest streak retained", nb.longest, 5.0)
     check("no-blink not alerting under threshold", nb.is_alerting(5.0), False)
     check("no-blink alerting over threshold", nb.is_alerting(11.0), True)
 
