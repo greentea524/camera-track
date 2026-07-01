@@ -13,14 +13,16 @@ This implements KAN-33:
     ignored because it is the noisiest finger to classify.
   * Round loop — waits for a hand to appear, then a countdown, then the
     player's gesture is locked in (mode of the last few frames), the computer
-    picks randomly, and the winner shows. Each round re-arms by waiting again.
+    picks randomly, and the winner shows. Each round re-arms by waiting again;
+    press SPACE to start the next round (or --manual to require it).
   * Score tracker — running wins / losses / draws.
   * Countdown timer before each round so you know when to show your hand.
 
 Usage (run on your own machine — needs camera + display):
 
-    python rps_game.py                   # default 3s countdown
+    python rps_game.py                   # default 3s countdown, auto-advance
     python rps_game.py --countdown 5     # longer countdown
+    python rps_game.py --manual          # hold each result until SPACE
     python rps_game.py --seed 0          # deterministic computer moves
     python rps_game.py --self-test       # verify game logic, no camera
 
@@ -126,9 +128,12 @@ class RPSGame:
     RESULT = "result"
 
     def __init__(self, countdown_seconds=3.0, result_seconds=2.5, window=5,
-                 rng=None):
+                 rng=None, auto_advance=True):
         self.countdown_seconds = countdown_seconds
         self.result_seconds = result_seconds
+        # When True the result auto-advances after result_seconds; when False the
+        # round holds on the result until replay() (spacebar) is called.
+        self.auto_advance = auto_advance
         self.stabilizer = GestureStabilizer(window)
         self.score = ScoreBoard()
         self._rng = rng or random.Random()
@@ -176,12 +181,26 @@ class RPSGame:
             self._phase_start = now
             return self._view()
 
-        # RESULT phase: hold the outcome on screen, then wait for a hand again.
+        # RESULT phase: hold the outcome on screen. In auto mode it returns to
+        # waiting after result_seconds; otherwise it waits for a spacebar replay.
         remaining = self.result_seconds - elapsed
-        if remaining <= 0:
+        if self.auto_advance and remaining <= 0:
             self._start_waiting(now)
             return self._view(live=gesture)
         return self._view()
+
+    def replay(self, now=None):
+        """Start a new round from the result phase (bound to spacebar).
+
+        Returns True if it re-armed the game, False if called at a time when
+        there's nothing to replay (i.e. not currently showing a result).
+        """
+        if now is None:
+            now = time.monotonic()
+        if self.phase == self.RESULT:
+            self._start_waiting(now)
+            return True
+        return False
 
     def _start_countdown(self, now):
         self.phase = self.COUNTDOWN
@@ -230,8 +249,9 @@ def run_game(args):
     rng = random.Random(args.seed) if args.seed is not None else None
     game = RPSGame(countdown_seconds=args.countdown,
                    result_seconds=args.result_hold,
-                   window=args.window, rng=rng)
-    print("Rock-Paper-Scissors — press 'q' or Esc to quit.")
+                   window=args.window, rng=rng,
+                   auto_advance=not args.manual)
+    print("Rock-Paper-Scissors — SPACE for a new round, 'q'/Esc to quit.")
 
     try:
         while True:
@@ -262,13 +282,16 @@ def run_game(args):
                     mp_styles.get_default_hand_connections_style(),
                 )
 
-            view = game.update(gesture, time.monotonic())
+            now = time.monotonic()
+            view = game.update(gesture, now)
             draw_game_overlay(cv2, frame, view)
 
             cv2.imshow("Rock Paper Scissors (q/Esc to quit)", frame)
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
                 break
+            if key == ord(" "):  # spacebar starts the next round
+                game.replay(now)
     finally:
         cap.release()
         hands.close()
@@ -312,6 +335,9 @@ def draw_game_overlay(cv2, frame, view):
                         1.0, (255, 255, 255), 2, cv2.LINE_AA)
             cv2.putText(frame, labels[rnd["result"]], (w // 2 - 140, h // 2 + 55),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.6, colors[rnd["result"]], 4,
+                        cv2.LINE_AA)
+            cv2.putText(frame, "Press SPACE to play again", (w // 2 - 220, h - 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2,
                         cv2.LINE_AA)
 
     if view["message"]:
@@ -383,6 +409,24 @@ def self_test():
     check("unclear gesture not scored", scored2, 0)
     check("replays countdown on unclear gesture", game2.phase, RPSGame.COUNTDOWN)
 
+    # Auto mode returns to waiting after the result hold elapses.
+    ga = RPSGame(countdown_seconds=1.0, result_seconds=0.5, rng=random.Random(0))
+    ga.update("rock", now=0.0)  # hand seen -> countdown
+    ga.update("rock", now=1.0)  # shoot -> result
+    ga.update("rock", now=1.6)  # past the result hold -> waiting
+    check("auto mode returns to waiting", ga.phase, RPSGame.WAITING)
+
+    # Manual mode holds on the result; SPACE (replay) re-arms it.
+    gm = RPSGame(countdown_seconds=1.0, result_seconds=0.5, auto_advance=False,
+                 rng=random.Random(0))
+    gm.update("rock", now=0.0)  # hand seen -> countdown
+    gm.update("rock", now=1.0)  # shoot -> result
+    gm.update("rock", now=5.0)  # long past the hold, but manual mode holds
+    check("manual mode holds on result", gm.phase, RPSGame.RESULT)
+    check("spacebar replay from result", gm.replay(now=5.1), True)
+    check("replay re-arms to waiting", gm.phase, RPSGame.WAITING)
+    check("replay ignored when not in result", gm.replay(now=5.2), False)
+
     print("\nSelf-test", "passed." if all_ok else "FAILED.")
     return 0 if all_ok else 1
 
@@ -400,6 +444,9 @@ def main():
                         help="Frames of gesture history used to lock in (default 5).")
     parser.add_argument("--seed", type=int, default=None,
                         help="Seed the computer's moves for reproducibility.")
+    parser.add_argument("--manual", action="store_true",
+                        help="Hold on each result until SPACE starts the next round "
+                             "(default: auto-advance after --result-hold).")
     parser.add_argument("--no-flip", action="store_true",
                         help="Do not mirror the webcam image.")
     parser.add_argument("--self-test", action="store_true",

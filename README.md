@@ -75,8 +75,12 @@ Press **`q`** or **Esc** in the window to quit.
 | `--result-hold F` | `2.5` | Seconds to show each round's result |
 | `--window N` | `5` | Frames of gesture history used to lock in |
 | `--seed N` | — | Seed the computer's moves for reproducibility |
+| `--manual` | off | Hold each result until SPACE starts the next round |
 | `--no-flip` | off | Don't mirror the image |
 | `--self-test` | — | Verify game logic without a camera |
+
+Press **SPACE** to start the next round (skips the result hold in auto mode; the
+only way to advance in `--manual` mode).
 
 Each app's `--self-test` mode validates its detection logic against synthetic
 landmarks and needs no hardware — handy for CI or a quick sanity check. For the
@@ -157,6 +161,9 @@ machine (scoring once per round, replaying on an unclear gesture).
   number, the live detected gesture, and the round result (You vs. CPU + outcome).
 - **Determinism** — the computer's moves come from an injectable `random.Random`,
   so `--seed` (and the self-test) make rounds reproducible.
+- **Replay (KAN-34)** — `replay()` (bound to SPACE) re-arms the game from the
+  result phase. By default rounds auto-advance after `--result-hold`; `--manual`
+  disables that so each result holds until you press SPACE.
 
 ## ⚠️ Important: MediaPipe version
 
