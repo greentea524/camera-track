@@ -9,6 +9,7 @@ webcam feed, locates the eyes and irises, and reports:
   * blink count     (debounced) and blinks-per-minute
   * drowsiness      (eyes closed beyond a duration threshold)
   * no-blink time   (seconds since the last blink; flags staring/eye strain)
+  * gaze arrow      (an arrow + reticle showing which way the eyes look)
 
 This single script implements KAN-24 through KAN-31:
 
@@ -21,6 +22,7 @@ This single script implements KAN-24 through KAN-31:
   KAN-30  Overlay eye/iris landmarks, gaze, blink count, drowsiness alert.
   KAN-31  Handle the no-face state, document robustness, exit cleanly.
   KAN-32  Track time since the last blink; flag prolonged staring/eye strain.
+  KAN-36  Draw the gaze direction as an arrow + on-frame reticle.
 
 Usage (run on your own machine — needs camera + display):
 
@@ -144,6 +146,24 @@ def estimate_gaze(landmarks):
     if v >= GAZE_DOWN_MIN:
         return "down"
     return "center"
+
+
+# --- KAN-36: gaze direction as a drawable vector ---------------------------
+def gaze_vector(landmarks):
+    """Return (dx, dy) in [-1, 1] describing which way the eyes are looking.
+
+    Built from the same averaged iris ratios as estimate_gaze(): dx runs -1
+    (viewer's left) to +1 (right), dy runs -1 (up) to +1 (down). Since image y
+    grows downward, +dy already points down in pixel space, so the vector can be
+    scaled and drawn directly onto the frame.
+    """
+    lh, lv = _eye_gaze_ratios(landmarks, LEFT_IRIS, LEFT_EYE_CORNERS, LEFT_EYE_LIDS)
+    rh, rv = _eye_gaze_ratios(landmarks, RIGHT_IRIS, RIGHT_EYE_CORNERS, RIGHT_EYE_LIDS)
+    h = (lh + rh) / 2.0
+    v = (lv + rv) / 2.0
+    dx = max(-1.0, min(1.0, (h - 0.5) * 2.0))
+    dy = max(-1.0, min(1.0, (v - 0.5) * 2.0))
+    return dx, dy
 
 
 # --- KAN-28: blink counting + rate -----------------------------------------
@@ -321,6 +341,8 @@ def run(args):
                 if not args.no_landmarks:
                     _draw_eye_landmarks(cv2, frame, results.multi_face_landmarks[0],
                                         mp_face, mp_draw, mp_styles)
+                if not args.no_gaze_arrow:
+                    _draw_gaze(cv2, frame, landmarks)
 
             draw_overlay(cv2, frame, state)
 
@@ -352,6 +374,29 @@ def _draw_eye_landmarks(cv2, frame, face_landmarks, mp_face, mp_draw, mp_styles)
         landmark_drawing_spec=None,
         connection_drawing_spec=mp_styles.get_default_face_mesh_contours_style(),
     )
+
+
+def _draw_gaze(cv2, frame, landmarks):
+    """KAN-36: draw a gaze arrow from the eyes plus an on-frame reticle."""
+    h_img, w_img = frame.shape[:2]
+    dx, dy = gaze_vector(landmarks)
+    color = (0, 255, 255)
+
+    # Arrow from the midpoint of the two irises, pointing where the eyes look.
+    lx, ly = landmarks[LEFT_IRIS[0]].x, landmarks[LEFT_IRIS[0]].y
+    rx, ry = landmarks[RIGHT_IRIS[0]].x, landmarks[RIGHT_IRIS[0]].y
+    mid = (int((lx + rx) / 2 * w_img), int((ly + ry) / 2 * h_img))
+    tip = (int(mid[0] + dx * 0.18 * w_img), int(mid[1] + dy * 0.18 * h_img))
+    cv2.arrowedLine(frame, mid, tip, color, 3, cv2.LINE_AA, tipLength=0.3)
+
+    # Reticle: a crosshair offset from the frame center by the gaze vector.
+    # This tracks gaze direction; it is not calibrated to real screen pixels.
+    cx, cy = w_img // 2, h_img // 2
+    tx = int(cx + dx * 0.35 * w_img)
+    ty = int(cy + dy * 0.35 * h_img)
+    cv2.circle(frame, (tx, ty), 12, color, 2, cv2.LINE_AA)
+    cv2.line(frame, (tx - 18, ty), (tx + 18, ty), color, 1, cv2.LINE_AA)
+    cv2.line(frame, (tx, ty - 18), (tx, ty + 18), color, 1, cv2.LINE_AA)
 
 
 def draw_overlay(cv2, frame, state):
@@ -463,6 +508,16 @@ def self_test():
     check("gaze up", estimate_gaze(_make_face(gaze_h=0.5, gaze_v=0.1)), "up")
     check("gaze down", estimate_gaze(_make_face(gaze_h=0.5, gaze_v=0.9)), "down")
 
+    # KAN-36: gaze vector direction/signs match the classification.
+    dxc, dyc = gaze_vector(_make_face(gaze_h=0.5, gaze_v=0.5))
+    check("gaze vector centered ~ zero", abs(dxc) < 0.05 and abs(dyc) < 0.05, True)
+    check("gaze vector points left", gaze_vector(_make_face(gaze_h=0.1))[0] < -0.3, True)
+    check("gaze vector points right", gaze_vector(_make_face(gaze_h=0.9))[0] > 0.3, True)
+    check("gaze vector points up",
+          gaze_vector(_make_face(gaze_h=0.5, gaze_v=0.1))[1] < -0.3, True)
+    check("gaze vector points down",
+          gaze_vector(_make_face(gaze_h=0.5, gaze_v=0.9))[1] > 0.3, True)
+
     # Blink debounce: one dip-and-recover = exactly one blink.
     bc = BlinkCounter(threshold=0.21, min_frames=2)
     t = 0.0
@@ -514,6 +569,8 @@ def main(argv=None):
                         help="Do not mirror the webcam image.")
     parser.add_argument("--no-landmarks", action="store_true",
                         help="Do not draw the eye/iris mesh overlay.")
+    parser.add_argument("--no-gaze-arrow", action="store_true",
+                        help="Do not draw the gaze arrow / reticle.")
     parser.add_argument("--self-test", action="store_true",
                         help="Run logic checks without a camera, then exit.")
     args = parser.parse_args(argv)

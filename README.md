@@ -5,9 +5,9 @@ Three real-time webcam apps built with **OpenCV** + **MediaPipe**:
 - **`hand_counter.py`** — counts extended fingers (0–10) across up to two
   hands, overlaying the count and hand skeleton. Implements **KAN-15**
   (environment) and **KAN-16 → KAN-21**.
-- **`eye_tracker.py`** — tracks gaze direction, blinks (count + rate),
-  drowsiness, and no-blink/staring time from the eyes/irises via Face Mesh.
-  Implements **KAN-24 → KAN-32**.
+- **`eye_tracker.py`** — tracks gaze direction (with an on-screen gaze arrow),
+  blinks (count + rate), drowsiness, and no-blink/staring time from the
+  eyes/irises via Face Mesh. Implements **KAN-24 → KAN-32** and **KAN-36**.
 - **`rps_game.py`** — play Rock-Paper-Scissors against the computer with hand
   gestures, with a countdown and score tracker. Implements **KAN-33 / KAN-34**.
 
@@ -19,7 +19,7 @@ Or launch any of them from a single menu with **`main.py`** (KAN-35).
 |------|---------|
 | `main.py` | Menu launcher for all the apps (KAN-35). |
 | `hand_counter.py` | The finger-counting app (KAN-16–21). |
-| `eye_tracker.py` | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
+| `eye_tracker.py` | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32, 36). |
 | `rps_game.py` | Rock-Paper-Scissors gesture game (KAN-33–34). |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15). |
 | `requirements.txt` | Pinned dependencies. |
@@ -89,6 +89,7 @@ App keywords: `hands`, `eyes`, `rps`, `check`.
 | `--no-blink-seconds F` | `10.0` | No-blink duration that flags staring/eye strain |
 | `--no-flip` | off | Don't mirror the image |
 | `--no-landmarks` | off | Don't draw the eye/iris mesh overlay |
+| `--no-gaze-arrow` | off | Don't draw the gaze arrow / reticle |
 | `--self-test` | — | Verify gaze/blink/drowsiness logic without a camera |
 
 ### `rps_game.py` options
@@ -152,6 +153,11 @@ machine (scoring once per round, replaying on an unclear gesture).
   (default 10s), a proxy for reduced blink rate / eye strain. It also tracks the
   session's longest no-blink streak (`.longest`) and shows it as a green
   "Best" top score.
+- **KAN-36** — `gaze_vector()` turns the averaged iris ratios into a `(dx, dy)`
+  in `[-1, 1]`; `_draw_gaze()` renders a gaze arrow from between the eyes plus a
+  crosshair reticle offset from the frame center. It shows gaze *direction* — it
+  is not calibrated to real screen pixels (that would need a calibration step
+  and head-pose compensation). Disable with `--no-gaze-arrow`.
 
 #### Robustness notes (KAN-31)
 
