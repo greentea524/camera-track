@@ -8,6 +8,7 @@ webcam feed, locates the eyes and irises, and reports:
   * gaze direction  (left / right / center / up / down)
   * blink count     (debounced) and blinks-per-minute
   * drowsiness      (eyes closed beyond a duration threshold)
+  * no-blink time   (seconds since the last blink; flags staring/eye strain)
 
 This single script implements KAN-24 through KAN-31:
 
@@ -19,6 +20,7 @@ This single script implements KAN-24 through KAN-31:
   KAN-29  Flag drowsiness on sustained eye closure (time-based).
   KAN-30  Overlay eye/iris landmarks, gaze, blink count, drowsiness alert.
   KAN-31  Handle the no-face state, document robustness, exit cleanly.
+  KAN-32  Track time since the last blink; flag prolonged staring/eye strain.
 
 Usage (run on your own machine — needs camera + display):
 
@@ -220,6 +222,35 @@ class DrowsinessMonitor:
         return False
 
 
+# --- KAN-32: no-blink (staring) duration -----------------------------------
+class NoBlinkMonitor:
+    """Track how long it's been since the last blink.
+
+    The mirror image of DrowsinessMonitor: instead of eyes staying closed, it
+    times eyes staying open without blinking. It's driven by the debounced
+    blink event from BlinkCounter rather than raw EAR, so the timer resets on
+    exactly the same events that count as a blink. A sustained high duration
+    suggests staring / reduced blink rate (eye strain).
+    """
+
+    def __init__(self, alert_seconds=10.0):
+        self.alert_seconds = alert_seconds
+        self._last_blink_time = None
+
+    def update(self, blinked, now=None):
+        """Feed the per-frame blink flag. Returns seconds since the last blink."""
+        if now is None:
+            now = time.monotonic()
+        # Start the clock on the first frame we see, then on every blink.
+        if self._last_blink_time is None or blinked:
+            self._last_blink_time = now
+        return now - self._last_blink_time
+
+    def is_alerting(self, duration):
+        """True when the no-blink duration has crossed the alert threshold."""
+        return duration >= self.alert_seconds
+
+
 # --- KAN-24/30: capture + detection loop -----------------------------------
 def run(args):
     import cv2
@@ -247,6 +278,7 @@ def run(args):
     blinks = BlinkCounter(threshold=args.ear_threshold)
     drowsy = DrowsinessMonitor(threshold=args.ear_threshold,
                                hold_seconds=args.drowsy_seconds)
+    no_blink = NoBlinkMonitor(alert_seconds=args.no_blink_seconds)
     print("Running eye tracker — press 'q' or Esc to quit.")
 
     try:
@@ -268,13 +300,16 @@ def run(args):
                 landmarks = results.multi_face_landmarks[0].landmark
                 ear = average_ear(landmarks)
                 now = time.monotonic()
-                blinks.update(ear, now)
+                blinked = blinks.update(ear, now)
+                no_blink_secs = no_blink.update(blinked, now)
                 state = {
                     "gaze": estimate_gaze(landmarks),
                     "ear": ear,
                     "blinks": blinks.total,
                     "bpm": blinks.blinks_per_minute(now),
                     "drowsy": drowsy.update(ear, now),
+                    "no_blink": no_blink_secs,
+                    "staring": no_blink.is_alerting(no_blink_secs),
                 }
                 if not args.no_landmarks:
                     _draw_eye_landmarks(cv2, frame, results.multi_face_landmarks[0],
@@ -329,6 +364,15 @@ def draw_overlay(cv2, frame, state):
                 f"Blinks: {state['blinks']}  ({state['bpm']:.0f}/min)  EAR {state['ear']:.2f}",
                 (15, 68), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2,
                 cv2.LINE_AA)
+
+    # KAN-32: no-blink duration, turning amber and flagging a stare when it
+    # crosses the alert threshold.
+    staring = state["staring"]
+    nb_text = f"No blink: {state['no_blink']:.1f}s"
+    if staring:
+        nb_text += "  (STARING?)"
+    cv2.putText(frame, nb_text, (w - 340, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                (0, 165, 255) if staring else (255, 255, 255), 2, cv2.LINE_AA)
 
     # KAN-29/30: prominent drowsiness alert banner.
     if state["drowsy"]:
@@ -387,7 +431,7 @@ def _make_face(open_amount=1.0, gaze_h=0.5, gaze_v=0.5):
 
 
 def self_test():
-    """Verify EAR, gaze, blink, and drowsiness logic. Returns exit code."""
+    """Verify EAR, gaze, blink, drowsiness, and no-blink logic. Returns exit code."""
     all_ok = True
 
     def check(desc, got, want):
@@ -432,6 +476,15 @@ def self_test():
     check("sustained closure drowsy", dm.update(0.05, now=2.0), True)
     check("reopen clears drowsy", dm.update(0.30, now=2.1), False)
 
+    # KAN-32: no-blink timer grows while open, resets on a blink, alerts late.
+    nb = NoBlinkMonitor(alert_seconds=10.0)
+    nb.update(False, now=0.0)                 # first frame anchors the clock
+    check("no-blink grows while open", nb.update(False, now=5.0), 5.0)
+    check("no-blink resets on blink", nb.update(True, now=6.0), 0.0)
+    check("no-blink resumes after reset", nb.update(False, now=6.5), 0.5)
+    check("no-blink not alerting under threshold", nb.is_alerting(5.0), False)
+    check("no-blink alerting over threshold", nb.is_alerting(11.0), True)
+
     print("\nSelf-test", "passed." if all_ok else "FAILED.")
     return 0 if all_ok else 1
 
@@ -445,6 +498,8 @@ def main():
                         help="EAR below this counts as a closed eye (default 0.21).")
     parser.add_argument("--drowsy-seconds", type=float, default=1.5,
                         help="Eyes-closed duration that flags drowsiness (default 1.5s).")
+    parser.add_argument("--no-blink-seconds", type=float, default=10.0,
+                        help="No-blink duration that flags staring/eye strain (default 10s).")
     parser.add_argument("--no-flip", action="store_true",
                         help="Do not mirror the webcam image.")
     parser.add_argument("--no-landmarks", action="store_true",

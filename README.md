@@ -5,15 +5,16 @@ Two real-time webcam apps built with **OpenCV** + **MediaPipe**:
 - **`hand_counter.py`** — counts extended fingers (0–10) across up to two
   hands, overlaying the count and hand skeleton. Implements **KAN-15**
   (environment) and **KAN-16 → KAN-21**.
-- **`eye_tracker.py`** — tracks gaze direction, blinks (count + rate), and
-  drowsiness from the eyes/irises via Face Mesh. Implements **KAN-24 → KAN-31**.
+- **`eye_tracker.py`** — tracks gaze direction, blinks (count + rate),
+  drowsiness, and no-blink/staring time from the eyes/irises via Face Mesh.
+  Implements **KAN-24 → KAN-32**.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `hand_counter.py` | The finger-counting app (KAN-16–21). |
-| `eye_tracker.py` | Gaze / blink / drowsiness tracker (KAN-24–31). |
+| `eye_tracker.py` | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15). |
 | `requirements.txt` | Pinned dependencies. |
 
@@ -56,6 +57,7 @@ Press **`q`** or **Esc** in the window to quit.
 | `--camera N` | `0` | Webcam index |
 | `--ear-threshold F` | `0.21` | EAR below this counts as a closed eye |
 | `--drowsy-seconds F` | `1.5` | Eyes-closed duration that flags drowsiness |
+| `--no-blink-seconds F` | `10.0` | No-blink duration that flags staring/eye strain |
 | `--no-flip` | off | Don't mirror the image |
 | `--no-landmarks` | off | Don't draw the eye/iris mesh overlay |
 | `--self-test` | — | Verify gaze/blink/drowsiness logic without a camera |
@@ -63,7 +65,7 @@ Press **`q`** or **Esc** in the window to quit.
 Each app's `--self-test` mode validates its detection logic against synthetic
 landmarks and needs no hardware — handy for CI or a quick sanity check. For the
 eye tracker it checks EAR (open vs. shut), gaze classification, single-blink
-debounce, and the drowsiness duration threshold.
+debounce, the drowsiness duration threshold, and the no-blink timer.
 
 ## How it maps to the tickets
 
@@ -76,7 +78,7 @@ debounce, and the drowsiness duration threshold.
 - **KAN-21** — graceful "No hand" state, a `CountStabilizer` debounce to stop
   flicker, and a `try/finally` that releases the camera and windows on `q`.
 
-### Eye tracker — `eye_tracker.py` (KAN-24–31)
+### Eye tracker — `eye_tracker.py` (KAN-24–32)
 
 - **KAN-24** — `mp.solutions.face_mesh.FaceMesh(refine_landmarks=True)` adds the
   iris landmarks (468–477) on top of the 468 base face-mesh points.
@@ -96,6 +98,11 @@ debounce, and the drowsiness duration threshold.
   `draw_overlay()` shows gaze, blink count/rate, EAR, and a red drowsiness banner.
 - **KAN-31** — graceful "No face" state, `try/finally` camera/resource release
   reused from the hand tracker, and the robustness notes below.
+- **KAN-32** — `NoBlinkMonitor` (the mirror image of `DrowsinessMonitor`) times
+  the seconds since the last blink, driven by `BlinkCounter`'s debounced event
+  so it resets on exactly the same blinks. The overlay shows the running
+  duration and turns amber with a "STARING?" flag past `--no-blink-seconds`
+  (default 10s), a proxy for reduced blink rate / eye strain.
 
 #### Robustness notes (KAN-31)
 
