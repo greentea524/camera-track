@@ -15,15 +15,15 @@ Or launch any of them from a single menu with **`main.py`** (KAN-35).
 
 ## Files
 
-| File | Purpose |
-|------|---------|
-| `main.py` | Menu launcher for all the apps (KAN-35). |
-| `hand_counter.py` | The finger-counting app (KAN-16–21). |
-| `eye_tracker.py` | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
-| `rps_game.py` | Rock-Paper-Scissors gesture game (KAN-33–34). |
-| `verify_camera.py` | Environment/webcam smoke-test (KAN-15). |
-| `display.py` | Shared resizable-preview-window helper. |
-| `requirements.txt` | Pinned dependencies. |
+| File               | Purpose                                                   |
+| ------------------ | --------------------------------------------------------- |
+| `main.py`          | Menu launcher for all the apps (KAN-35).                  |
+| `hand_counter.py`  | The finger-counting app (KAN-16–21).                      |
+| `eye_tracker.py`   | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
+| `rps_game.py`      | Rock-Paper-Scissors gesture game (KAN-33–34).             |
+| `verify_camera.py` | Environment/webcam smoke-test (KAN-15).                   |
+| `display.py`       | Shared resizable-preview-window helper.                   |
+| `requirements.txt` | Pinned dependencies.                                      |
 
 Every app opens a **resizable** preview window (drag to resize) at 1.5× the
 camera frame by default; tune the initial size with `--display-scale`.
@@ -58,6 +58,18 @@ Or run any app directly (equivalent to picking it from the menu):
 Press **`q`** or **Esc** in the window to quit (returns to the menu when
 launched via `main.py`).
 
+## Troubleshooting
+
+If the camera preview does not appear, try these steps first:
+
+- Run `verify_camera.py` to confirm the webcam is detected.
+- If your default camera is wrong, try a different index with `--camera 1` or
+  `--camera 2`.
+- On Windows, close other apps that may be using the webcam, then re-run the
+  app.
+- If the view is dark or unstable, improve lighting and make sure the face or
+  hand is clearly visible in the frame.
+
 ### `main.py` launcher (KAN-35)
 
 `main.py` imports the apps and dispatches to the one you pick — no camera is
@@ -74,42 +86,42 @@ App keywords: `hands`, `eyes`, `rps`, `check`.
 
 ### `hand_counter.py` options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--camera N` | `0` | Webcam index |
-| `--max-hands N` | `2` | Max hands to detect (use `1` for 0–5) |
-| `--window N` | `5` | Debounce window in frames |
-| `--no-flip` | off | Don't mirror the image |
-| `--no-debounce` | off | Show the raw per-frame count |
-| `--display-scale F` | `1.5` | Initial window size vs. camera frame (resizable) |
-| `--self-test` | — | Verify finger-detection logic without a camera |
+| Flag                | Default | Description                                      |
+| ------------------- | ------- | ------------------------------------------------ |
+| `--camera N`        | `0`     | Webcam index                                     |
+| `--max-hands N`     | `2`     | Max hands to detect (use `1` for 0–5)            |
+| `--window N`        | `5`     | Debounce window in frames                        |
+| `--no-flip`         | off     | Don't mirror the image                           |
+| `--no-debounce`     | off     | Show the raw per-frame count                     |
+| `--display-scale F` | `1.5`   | Initial window size vs. camera frame (resizable) |
+| `--self-test`       | —       | Verify finger-detection logic without a camera   |
 
 ### `eye_tracker.py` options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--camera N` | `0` | Webcam index |
-| `--ear-threshold F` | `0.21` | EAR below this counts as a closed eye |
-| `--drowsy-seconds F` | `1.5` | Eyes-closed duration that flags drowsiness |
-| `--no-blink-seconds F` | `10.0` | No-blink duration that flags staring/eye strain |
-| `--no-flip` | off | Don't mirror the image |
-| `--no-landmarks` | off | Don't draw the eye/iris mesh overlay |
-| `--display-scale F` | `1.5` | Initial window size vs. camera frame (resizable) |
-| `--self-test` | — | Verify gaze/blink/drowsiness logic without a camera |
+| Flag                   | Default | Description                                         |
+| ---------------------- | ------- | --------------------------------------------------- |
+| `--camera N`           | `0`     | Webcam index                                        |
+| `--ear-threshold F`    | `0.21`  | EAR below this counts as a closed eye               |
+| `--drowsy-seconds F`   | `1.5`   | Eyes-closed duration that flags drowsiness          |
+| `--no-blink-seconds F` | `10.0`  | No-blink duration that flags staring/eye strain     |
+| `--no-flip`            | off     | Don't mirror the image                              |
+| `--no-landmarks`       | off     | Don't draw the eye/iris mesh overlay                |
+| `--display-scale F`    | `1.5`   | Initial window size vs. camera frame (resizable)    |
+| `--self-test`          | —       | Verify gaze/blink/drowsiness logic without a camera |
 
 ### `rps_game.py` options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--camera N` | `0` | Webcam index |
-| `--countdown F` | `3.0` | Countdown seconds before each round |
-| `--result-hold F` | `2.5` | Seconds to show each round's result |
-| `--window N` | `5` | Frames of gesture history used to lock in |
-| `--seed N` | — | Seed the computer's moves for reproducibility |
-| `--manual` | off | Hold each result until SPACE starts the next round |
-| `--no-flip` | off | Don't mirror the image |
-| `--display-scale F` | `1.5` | Initial window size vs. camera frame (resizable) |
-| `--self-test` | — | Verify game logic without a camera |
+| Flag                | Default | Description                                        |
+| ------------------- | ------- | -------------------------------------------------- |
+| `--camera N`        | `0`     | Webcam index                                       |
+| `--countdown F`     | `3.0`   | Countdown seconds before each round                |
+| `--result-hold F`   | `2.5`   | Seconds to show each round's result                |
+| `--window N`        | `5`     | Frames of gesture history used to lock in          |
+| `--seed N`          | —       | Seed the computer's moves for reproducibility      |
+| `--manual`          | off     | Hold each result until SPACE starts the next round |
+| `--no-flip`         | off     | Don't mirror the image                             |
+| `--display-scale F` | `1.5`   | Initial window size vs. camera frame (resizable)   |
+| `--self-test`       | —       | Verify game logic without a camera                 |
 
 Press **SPACE** to start the next round (skips the result hold in auto mode; the
 only way to advance in `--manual` mode).
@@ -126,7 +138,7 @@ machine (scoring once per round, replaying on an unclear gesture).
 - **KAN-16** — `cv2.VideoCapture` opens the webcam; the main loop reads frames.
 - **KAN-17** — `mediapipe` Hands returns 21 landmarks per detected hand.
 - **KAN-18** — `fingers_up()` judges each finger: non-thumb fingers by tip-vs-PIP
-  *y*, the thumb by *x* (orientation taken from MediaPipe's handedness label).
+  _y_, the thumb by _x_ (orientation taken from MediaPipe's handedness label).
 - **KAN-19** — `cv2.putText` overlays the count; `drawing_utils` draws the skeleton.
 - **KAN-20** — `max_num_hands=2`; fingers are summed across both hands (0–10).
 - **KAN-21** — graceful "No hand" state, a `CountStabilizer` debounce to stop
@@ -181,7 +193,7 @@ machine (scoring once per round, replaying on an unclear gesture).
   curled = rock, all extended = paper, index+middle up with ring+pinky down =
   scissors, anything else = unknown.
 - **Round loop** — `RPSGame` is a `wait-for-hand -> countdown -> lock-in ->
-  result -> repeat` state machine. It holds in a "Show your hand to start!"
+result -> repeat` state machine. It holds in a "Show your hand to start!"
   state until a hand is detected, so the countdown never runs on an empty frame,
   and each round returns there to re-arm. At the end of the countdown the
   gesture is locked in as the mode of the last few frames (`GestureStabilizer`)
@@ -202,7 +214,7 @@ machine (scoring once per round, replaying on an unclear gesture).
 All three apps use the **legacy `mediapipe.solutions` API** (`Hands` and
 `FaceMesh`; `rps_game.py` reuses the hand pipeline). MediaPipe **0.10.30+
 removed** the bundled `mp.solutions` wrappers
-in favour of the newer *Tasks* API (`HandLandmarker` / `FaceLandmarker`, which
+in favour of the newer _Tasks_ API (`HandLandmarker` / `FaceLandmarker`, which
 need a separate `.task` model file). The pinned **`mediapipe==0.10.21`** is the
 last release that still ships `solutions`. That build requires **numpy < 2**,
 which is why `opencv-python` is pinned to `4.11.0.86` (a numpy<2-compatible
