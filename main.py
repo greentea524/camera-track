@@ -22,6 +22,7 @@ import sys
 import hand_counter
 import eye_tracker
 import rps_game
+import rubiks_cube
 import verify_camera
 
 # Ordered menu: number -> (name, description, app entry point). The name is the
@@ -30,6 +31,7 @@ APPS = [
     ("hands", "Finger counter (count 0-10 fingers)", hand_counter.main),
     ("eyes", "Eye tracker (gaze / blink / drowsiness)", eye_tracker.main),
     ("rps", "Rock-Paper-Scissors game", rps_game.main),
+    ("cube", "Rubik's Cube face scanner", rubiks_cube.main),
     ("check", "Camera / environment check", verify_camera.main),
 ]
 
@@ -127,7 +129,8 @@ def self_test():
     check("choice '1' -> hands", select("1"), hand_counter.main)
     check("choice '2' -> eyes", select("2"), eye_tracker.main)
     check("choice '3' -> rps", select("3"), rps_game.main)
-    check("choice '4' -> check", select("4"), verify_camera.main)
+    check("choice '4' -> cube", select("4"), rubiks_cube.main)
+    check("choice '5' -> check", select("5"), verify_camera.main)
 
     # Names map too, case-insensitively and with surrounding whitespace.
     check("name 'eyes' -> eye_tracker", select("eyes"), eye_tracker.main)
