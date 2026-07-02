@@ -41,7 +41,9 @@ python -m venv .venv
 ## Run
 
 The apps need real camera + display hardware, so run them on your own machine.
-The easiest way is the menu launcher:
+If you are trying the project for the first time, start with `verify_camera.py`
+to confirm webcam access before launching an app. The easiest way is the menu
+launcher:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py             # pick an app from a menu
