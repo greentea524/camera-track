@@ -12,8 +12,8 @@ Real-time webcam apps built with **OpenCV** + **MediaPipe**:
   gestures, with a countdown and score tracker. Implements **KAN-33 / KAN-34**.
 - **`rubiks_cube.py`** — detects a Rubik's Cube face, corrects its
   perspective, classifies the 9 stickers by color, and shows the live face
-  state. Implements issues **#20 → #25** (see below; solve guidance, #26, is
-  a separate follow-up).
+  state — then scans all six faces and walks you through solving the cube
+  move by move. Implements issues **#20 → #26**.
 
 Or launch any of them from a single menu with **`main.py`** (KAN-35).
 
@@ -25,7 +25,8 @@ Or launch any of them from a single menu with **`main.py`** (KAN-35).
 | `hand_counter.py`  | The finger-counting app (KAN-16–21).                      |
 | `eye_tracker.py`   | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
 | `rps_game.py`      | Rock-Paper-Scissors gesture game (KAN-33–34).             |
-| `rubiks_cube.py`   | Rubik's Cube face scanner (#20–25).                       |
+| `rubiks_cube.py`   | Rubik's Cube face scanner + solve guidance (#20–26).      |
+| `cube_solver.py`   | Pure-Python cube model + beginner-method solver (#26).    |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15).                   |
 | `display.py`       | Shared resizable-preview-window helper.                   |
 | `requirements.txt` | Pinned dependencies.                                      |
@@ -152,6 +153,28 @@ default: the face state reads left-to-right off the physical cube, and
 mirroring would silently flip that orientation in the output. Pass `--flip`
 if you'd rather see a selfie-style mirrored preview.
 
+#### Solve mode (#26)
+
+Press **`s`** in the tracker to start a guided solve:
+
+1. **Scan** — the overlay walks you through showing all six faces to the
+   camera (green, red, blue, orange, then tilt for white and yellow, always
+   keeping white on top for the side faces). **SPACE** captures each face; the
+   center color is checked against the prompt so faces can't be captured out
+   of order.
+2. **Validate + solve** — the captures are assembled into a full cube state
+   (colors keyed by center stickers, sticker counts checked) and handed to
+   `cube_solver.py`, a dependency-free beginner-method solver (bottom cross →
+   corners → middle edges → last layer). A misread scan fails validation or a
+   solving stage and restarts the scan instead of emitting bogus moves.
+3. **Guide** — the overlay shows one move at a time ("RED face: 1/4 turn
+   clockwise"); **SPACE** advances after you make the move, **`r`** restarts.
+   Moves name faces by their *center color* and clockwise means "as if looking
+   straight at that face", so they're unambiguous however you hold the cube.
+
+Beginner-method solutions run long (typically 100–170 moves) but every step
+is a single face turn — that's the trade for guidance a human can follow.
+
 Each app's `--self-test` mode validates its detection logic against synthetic
 landmarks and needs no hardware — handy for CI or a quick sanity check. For the
 eye tracker it checks EAR (open vs. shut), gaze classification, single-blink
@@ -237,7 +260,7 @@ result -> repeat` state machine. It holds in a "Show your hand to start!"
   result phase. By default rounds auto-advance after `--result-hold`; `--manual`
   disables that so each result holds until you press SPACE.
 
-### Rubik's Cube tracker — `rubiks_cube.py` (#20–25)
+### Rubik's Cube tracker — `rubiks_cube.py` (#20–26)
 
 - **#20/#21** — new module following the same CLI/menu pattern as the other
   apps (`--camera`, `--display-scale`, `--self-test`), wired into `main.py`
@@ -265,15 +288,26 @@ result -> repeat` state machine. It holds in a "Show your hand to start!"
   prints the current state string (green when fully resolved, amber when
   some stickers are ambiguous).
 
+- **#26** — press `s` for solve mode: a six-step scan (each capture's center
+  color is checked against the prompt), `assemble_cube()` keys colors to
+  faces by center sticker and validates counts, and `cube_solver.py` produces
+  the move list that `move_text()` renders as color-named instructions in the
+  overlay ("RED face: 1/4 turn clockwise"), advanced with SPACE.
+
+`cube_solver.py` is a dependency-free facelet-level cube model plus a
+layer-by-layer beginner solver. Its self-test leans on cube *group* facts —
+each face turn to the 4th power is the identity, the "sexy move" has order 6,
+and (R·U) has order 105 — which verify the move permutations against the real
+cube, not just against themselves, then confirms 30 random scrambles solve
+end-to-end and that impossible states (twisted corner, bad sticker counts)
+raise instead of emitting bogus guidance.
+
 `rubiks_cube.py --self-test` covers the pure logic — corner ordering, grid
-layout, color classification, and state validation — without a camera. The
+layout, color classification, state validation, and the full scan→assemble→
+solve→verify round trip on a virtually scrambled cube — without a camera. The
 image-processing glue (`detect_face_quad`, `warp_face`, `classify_face`) is
 exercised against a synthetic image during development but, matching the
 other apps' style, isn't part of the hardware-free self-test.
-
-**Not included yet:** issue **#26** (on-screen solve guidance) needs a
-multi-face scan (all 6 sides) plus an actual solving algorithm — a
-meaningfully larger follow-up, not a single-face-detection feature.
 
 ## ⚠️ Important: MediaPipe version
 

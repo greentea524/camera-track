@@ -19,10 +19,15 @@ This single script implements GitHub issues #20-25:
            validation for unknown/ambiguous stickers.
   #25      Overlay the detected face outline, a gridded thumbnail, and the
            current state string on the live preview.
+  #26      Solve mode: scan all six faces step by step, run the beginner
+           solver (cube_solver.py), and show move-by-move guidance on screen.
 
-Note: this reads *one* face at a time. Turning the detected colors into a
-full 6-face solve (issue #26) needs a multi-face scan plus an actual solving
-algorithm — a separate, larger effort not included here.
+Solve mode: press 's', then show each prompted face to the camera and press
+SPACE to capture it (six faces total). The solver validates the scan and the
+overlay then walks you through the solution one move at a time ("RED face:
+1/4 turn clockwise"); SPACE advances, 'r' restarts. Moves name faces by their
+*center color*, and clockwise means "as if looking straight at that face",
+so the instructions work no matter how you hold the cube.
 
 Usage (run on your own machine — needs camera + display):
 
@@ -30,7 +35,7 @@ Usage (run on your own machine — needs camera + display):
     python rubiks_cube.py --camera 1       # use a different camera index
     python rubiks_cube.py --flip           # mirror the image (selfie view)
     python rubiks_cube.py --min-area 0.08  # detect a smaller/farther face
-    python rubiks_cube.py --self-test      # verify detection/color logic, no camera
+    python rubiks_cube.py --self-test      # verify detection/color/solve logic
 
 Press 'q' or Esc in the video window to quit.
 """
@@ -39,6 +44,7 @@ import argparse
 import colorsys
 import sys
 
+import cube_solver
 import display
 
 # Canonical sticker colors, keyed by the single-letter code used in the face
@@ -233,6 +239,77 @@ def face_state(grid):
     return {"grid": grid, "flat": flat, "valid": unknown == 0, "issues": issues}
 
 
+# --- #26: six-face scan -> solver state -> human guidance --------------------
+# Scan order and how to hold the cube for each capture. The prompts assume the
+# standard color scheme (white opposite yellow, green opposite blue, red
+# opposite orange); the assembly itself is scheme-agnostic and keyed on the
+# captured center colors.
+SCAN_STEPS = [
+    ("F", "G", "Show the GREEN face to the camera, WHITE on top"),
+    ("R", "R", "Turn the cube: show RED to the camera, WHITE on top"),
+    ("B", "B", "Keep turning: show BLUE to the camera, WHITE on top"),
+    ("L", "O", "Keep turning: show ORANGE to the camera, WHITE on top"),
+    ("U", "W", "Back to GREEN in front, then tilt down: WHITE to camera"),
+    ("D", "Y", "From GREEN in front, tilt up: YELLOW to camera"),
+]
+
+
+def assemble_cube(captures):
+    """Turn six captured 3x3 color grids into a solver state.
+
+    `captures` maps face letters (URFDLB) to 3x3 grids of color codes as
+    captured by the scanner. Colors are mapped to faces by each capture's
+    center sticker, so any color scheme works as long as centers are right.
+    Returns (state, errors): state is {face: [9 face letters]} or None.
+    """
+    if sorted(captures) != sorted("URFDLB"):
+        return None, ["captures must cover exactly the six faces"]
+    color_to_face = {}
+    for face, grid in captures.items():
+        center = grid[1][1]
+        if center in color_to_face:
+            return None, [f"two faces share the center color {center!r}"]
+        color_to_face[center] = face
+
+    errors = []
+    counts = {}
+    for grid in captures.values():
+        for row in grid:
+            for code in row:
+                counts[code] = counts.get(code, 0) + 1
+    for color in color_to_face:
+        if counts.get(color, 0) != 9:
+            errors.append(f"found {counts.get(color, 0)} '{color}' stickers, expected 9")
+    unknown = {c: n for c, n in counts.items() if c not in color_to_face}
+    if unknown:
+        errors.append(f"unrecognized sticker colors: {unknown}")
+    if errors:
+        return None, errors
+
+    state = {
+        face: [color_to_face[code] for row in grid for code in row]
+        for face, grid in captures.items()
+    }
+    return state, []
+
+
+def move_text(move, face_colors):
+    """Human instruction for one move token, naming the face by its color.
+
+    `face_colors` maps face letters to color codes (from the scan), so 'R2'
+    becomes e.g. "RED face: half turn". Clockwise is defined as if looking
+    straight at that face, which holds however the cube is held.
+    """
+    face, suffix = move[0], move[1:]
+    color = COLOR_NAMES.get(face_colors.get(face, ""), face).upper()
+    amount = {
+        "": "1/4 turn clockwise",
+        "2": "half turn",
+        "'": "1/4 turn counter-clockwise",
+    }[suffix]
+    return f"{color} face: {amount}"
+
+
 # --- #25: live overlay -------------------------------------------------------
 def annotate_warped(cv2, warped, grid):
     """Draw 3x3 grid lines and each cell's color code onto a copy of the warped face."""
@@ -281,7 +358,19 @@ def draw_overlay(cv2, np, frame, quad, warped_annotated, state):
     frame[10:10 + thumb_size, w - thumb_size - 10:w - 10] = thumb
 
 
-# --- main capture loop (#20-22) ---------------------------------------------
+def draw_workflow(cv2, frame, lines):
+    """#26: render the solve-workflow instruction band along the bottom."""
+    h, w = frame.shape[:2]
+    band = 28 + 30 * len(lines)
+    cv2.rectangle(frame, (0, h - band), (w, h), (0, 0, 0), -1)
+    for i, (text, color) in enumerate(lines):
+        cv2.putText(
+            frame, text, (15, h - band + 32 + i * 30), cv2.FONT_HERSHEY_SIMPLEX,
+            0.75, color, 2, cv2.LINE_AA,
+        )
+
+
+# --- main capture loop (#20-22, #26 workflow) ---------------------------------
 def run(args):
     """Live capture + detect/classify/overlay loop."""
     import cv2
@@ -292,9 +381,21 @@ def run(args):
         print(f"[FAIL] could not open camera index {args.camera}")
         return 2
 
-    print("Running Rubik's Cube tracker — press 'q' or Esc to quit.")
+    print("Running Rubik's Cube tracker — 's' to scan & solve, 'q'/Esc to quit.")
     window = "Rubik's Cube Tracker (q/Esc to quit)"
     sized = False
+
+    # #26 solve-workflow state: track -> scan (6 captures) -> guide -> done.
+    mode = "track"
+    captures = {}
+    face_colors = {}
+    solution = []
+    move_index = 0
+    message = ""
+
+    white = (255, 255, 255)
+    green = (0, 255, 0)
+    amber = (0, 200, 255)
 
     try:
         while True:
@@ -312,6 +413,7 @@ def run(args):
             quad = detect_face_quad(frame, cv2, np, min_area_ratio=args.min_area)
             state = None
             warped_annotated = None
+            grid = None
             if quad is not None:
                 warped = warp_face(frame, cv2, np, quad)
                 grid = classify_face(cv2, warped)
@@ -320,6 +422,33 @@ def run(args):
 
             draw_overlay(cv2, np, frame, quad, warped_annotated, state)
 
+            # #26: workflow instruction band.
+            if mode == "track":
+                draw_workflow(cv2, frame, [
+                    ("Press 's' to scan the cube and get solve guidance", white),
+                ])
+            elif mode == "scan":
+                _face, color, prompt = SCAN_STEPS[len(captures)]
+                lines = [
+                    (f"Scan {len(captures) + 1}/6: {prompt}", white),
+                    ("SPACE = capture    r = restart    q = quit", green),
+                ]
+                if message:
+                    lines.append((message, amber))
+                draw_workflow(cv2, frame, lines)
+            elif mode == "guide":
+                lines = [
+                    (f"Move {move_index + 1}/{len(solution)}: "
+                     f"{move_text(solution[move_index], face_colors)}", green),
+                    ("(clockwise = as if looking at that face)", white),
+                    ("SPACE = I did it, next    r = restart    q = quit", white),
+                ]
+                draw_workflow(cv2, frame, lines)
+            elif mode == "done":
+                draw_workflow(cv2, frame, [
+                    ("Cube solved — nice!    r = scan again    q = quit", green),
+                ])
+
             if not sized:
                 display.open_window(cv2, window, frame, args.display_scale)
                 sized = True
@@ -327,6 +456,41 @@ def run(args):
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):  # clean exit
                 break
+            if key == ord("r"):
+                mode, captures, solution, move_index, message = "track", {}, [], 0, ""
+            elif key == ord("s") and mode == "track":
+                mode, captures, message = "scan", {}, ""
+            elif key == ord(" ") and mode == "scan":
+                face, expect_color, _prompt = SCAN_STEPS[len(captures)]
+                if state is None or not state["valid"]:
+                    message = "No clean face detection — adjust and try again"
+                elif grid[1][1] != expect_color:
+                    got = COLOR_NAMES.get(grid[1][1], "?")
+                    message = (f"Center looks {got.upper()}, expected "
+                               f"{COLOR_NAMES[expect_color].upper()} — check the prompt")
+                else:
+                    captures[face] = grid
+                    message = ""
+                    if len(captures) == 6:
+                        cube_state, errors = assemble_cube(captures)
+                        if errors:
+                            print("[scan] " + "; ".join(errors))
+                            captures, message = {}, "Scan inconsistent — starting over"
+                            continue
+                        try:
+                            solution = cube_solver.solve(cube_state)
+                        except ValueError as exc:
+                            print(f"[scan] {exc}")
+                            captures, message = {}, "Scan looks misread — starting over"
+                            continue
+                        face_colors = {f: g[1][1] for f, g in captures.items()}
+                        move_index = 0
+                        mode = "done" if not solution else "guide"
+                        print(f"[solve] {len(solution)} moves: {' '.join(solution)}")
+            elif key == ord(" ") and mode == "guide":
+                move_index += 1
+                if move_index >= len(solution):
+                    mode = "done"
     finally:
         cap.release()
         cv2.destroyAllWindows()
@@ -378,6 +542,39 @@ def self_test():
     messy_state = face_state(messy)
     check("face_state flags unknowns", messy_state["valid"], False)
     check("face_state issue count", len(messy_state["issues"]), 1)
+
+    # --- #26: scan assembly + solve guidance -------------------------------
+    scheme = {face: color for face, color, _prompt in SCAN_STEPS}
+
+    def to_captures(cube):
+        """Render a solver Cube back into per-face 3x3 color grids."""
+        return {
+            face: [[scheme[cube.f[face][r * 3 + c]] for c in range(3)] for r in range(3)]
+            for face in "URFDLB"
+        }
+
+    solved_caps = to_captures(cube_solver.Cube())
+    cube_state, errors = assemble_cube(solved_caps)
+    check("assemble solved captures", errors, [])
+    check("solved scan needs no moves", cube_solver.solve(cube_state), [])
+
+    # Scramble a virtual cube, "scan" it, solve, and apply the guidance moves.
+    scrambled = cube_solver.Cube().apply(cube_solver.scramble(25, seed=7))
+    cube_state, errors = assemble_cube(to_captures(scrambled))
+    check("assemble scrambled captures", errors, [])
+    moves = cube_solver.solve(cube_state)
+    check("guidance really solves the cube",
+          scrambled.apply(moves).is_solved(), True)
+
+    bad_caps = to_captures(cube_solver.Cube())
+    bad_caps["F"][0][0] = "W"  # 10 whites, 8 greens
+    _state, errors = assemble_cube(bad_caps)
+    check("bad sticker counts rejected", len(errors) > 0, True)
+
+    check("move_text names the color",
+          move_text("R2", scheme), "RED face: half turn")
+    check("move_text counter-clockwise",
+          move_text("F'", scheme), "GREEN face: 1/4 turn counter-clockwise")
 
     print("\nSelf-test", "passed." if all_ok else "FAILED.")
     return 0 if all_ok else 1
