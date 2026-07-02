@@ -60,6 +60,9 @@ Or run any app directly (equivalent to picking it from the menu):
 Press **`q`** or **Esc** in the window to quit (returns to the menu when
 launched via `main.py`).
 
+For a quick sanity check before using a camera, run `main.py --self-test` to
+verify the launcher wiring without opening the webcam.
+
 ## Troubleshooting
 
 If the camera preview does not appear, try these steps first:
