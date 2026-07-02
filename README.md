@@ -41,7 +41,9 @@ python -m venv .venv
 ## Run
 
 The apps need real camera + display hardware, so run them on your own machine.
-The easiest way is the menu launcher:
+If you are trying the project for the first time, start with `verify_camera.py`
+to confirm webcam access before launching an app. The easiest way is the menu
+launcher:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py             # pick an app from a menu
@@ -57,6 +59,9 @@ Or run any app directly (equivalent to picking it from the menu):
 
 Press **`q`** or **Esc** in the window to quit (returns to the menu when
 launched via `main.py`).
+
+For a quick sanity check before using a camera, run `main.py --self-test` to
+verify the launcher wiring without opening the webcam.
 
 ## Troubleshooting
 
@@ -131,7 +136,9 @@ landmarks and needs no hardware — handy for CI or a quick sanity check. For th
 eye tracker it checks EAR (open vs. shut), gaze classification, single-blink
 debounce, the drowsiness duration threshold, and the no-blink timer. For the RPS
 game it checks gesture classification, the winner table, and the round state
-machine (scoring once per round, replaying on an unclear gesture).
+machine (scoring once per round, replaying on an unclear gesture). The same
+self-test flow is also useful as a quick smoke test after installing or updating
+dependencies.
 
 ## How it maps to the tickets
 
