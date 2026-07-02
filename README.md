@@ -1,6 +1,6 @@
 # camera-track — webcam vision toys
 
-Three real-time webcam apps built with **OpenCV** + **MediaPipe**:
+Real-time webcam apps built with **OpenCV** + **MediaPipe**:
 
 - **`hand_counter.py`** — counts extended fingers (0–10) across up to two
   hands, overlaying the count and hand skeleton. Implements **KAN-15**
@@ -10,6 +10,10 @@ Three real-time webcam apps built with **OpenCV** + **MediaPipe**:
   Implements **KAN-24 → KAN-32**.
 - **`rps_game.py`** — play Rock-Paper-Scissors against the computer with hand
   gestures, with a countdown and score tracker. Implements **KAN-33 / KAN-34**.
+- **`rubiks_cube.py`** — detects a Rubik's Cube face, corrects its
+  perspective, classifies the 9 stickers by color, and shows the live face
+  state. Implements issues **#20 → #25** (see below; solve guidance, #26, is
+  a separate follow-up).
 
 Or launch any of them from a single menu with **`main.py`** (KAN-35).
 
@@ -21,6 +25,7 @@ Or launch any of them from a single menu with **`main.py`** (KAN-35).
 | `hand_counter.py`  | The finger-counting app (KAN-16–21).                      |
 | `eye_tracker.py`   | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
 | `rps_game.py`      | Rock-Paper-Scissors gesture game (KAN-33–34).             |
+| `rubiks_cube.py`   | Rubik's Cube face scanner (#20–25).                       |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15).                   |
 | `display.py`       | Shared resizable-preview-window helper.                   |
 | `requirements.txt` | Pinned dependencies.                                      |
@@ -55,6 +60,7 @@ Or run any app directly (equivalent to picking it from the menu):
 .\.venv\Scripts\python.exe hand_counter.py     # finger counter
 .\.venv\Scripts\python.exe eye_tracker.py      # gaze / blink / drowsiness
 .\.venv\Scripts\python.exe rps_game.py         # Rock-Paper-Scissors
+.\.venv\Scripts\python.exe rubiks_cube.py      # Rubik's Cube face scanner
 ```
 
 Press **`q`** or **Esc** in the window to quit (returns to the menu when
@@ -87,7 +93,7 @@ the menu and launch by name or number, passing flags straight through to the app
 .\.venv\Scripts\python.exe main.py --self-test      # verify menu wiring, no camera
 ```
 
-App keywords: `hands`, `eyes`, `rps`, `check`.
+App keywords: `hands`, `eyes`, `rps`, `cube`, `check`.
 
 ### `hand_counter.py` options
 
@@ -130,6 +136,21 @@ App keywords: `hands`, `eyes`, `rps`, `check`.
 
 Press **SPACE** to start the next round (skips the result hold in auto mode; the
 only way to advance in `--manual` mode).
+
+### `rubiks_cube.py` options
+
+| Flag                 | Default | Description                                          |
+| -------------------- | ------- | ----------------------------------------------------- |
+| `--camera N`         | `0`     | Webcam index                                          |
+| `--flip`             | off     | Mirror the image (off by default — see note below)    |
+| `--min-area F`       | `0.12`  | Minimum detected-face area as a fraction of the frame |
+| `--display-scale F`  | `1.5`   | Initial window size vs. camera frame (resizable)      |
+| `--self-test`        | —       | Verify detection/color/state logic without a camera   |
+
+Unlike the other apps, `rubiks_cube.py` does **not** mirror the image by
+default: the face state reads left-to-right off the physical cube, and
+mirroring would silently flip that orientation in the output. Pass `--flip`
+if you'd rather see a selfie-style mirrored preview.
 
 Each app's `--self-test` mode validates its detection logic against synthetic
 landmarks and needs no hardware — handy for CI or a quick sanity check. For the
@@ -215,6 +236,44 @@ result -> repeat` state machine. It holds in a "Show your hand to start!"
 - **Replay (KAN-34)** — `replay()` (bound to SPACE) re-arms the game from the
   result phase. By default rounds auto-advance after `--result-hold`; `--manual`
   disables that so each result holds until you press SPACE.
+
+### Rubik's Cube tracker — `rubiks_cube.py` (#20–25)
+
+- **#20/#21** — new module following the same CLI/menu pattern as the other
+  apps (`--camera`, `--display-scale`, `--self-test`), wired into `main.py`
+  as the `cube` app.
+- **#22** — `detect_face_quad()` edge-detects the frame, dilates to bridge
+  the dark grooves between stickers so the whole face merges into one blob,
+  then approximates the largest contour to a quadrilateral (falling back to
+  a rotated bounding box for non-clean quads). Detections that are too small
+  or too far from square are rejected, so a poor/partial view just shows "No
+  cube face detected" instead of a bogus result. `warp_face()` then
+  perspective-warps the quad into a straight-on square with
+  `cv2.getPerspectiveTransform`.
+- **#23** — `grid_cells()` splits the warped square into a 3x3 grid;
+  `sample_cell_bgr()` averages the inset center of each cell (avoiding grid-
+  line edges); `classify_color()` converts that mean color to HSV (via the
+  stdlib `colorsys`, so it needs no image library) and `classify_hsv()`
+  buckets it into one of the 6 standard cube colors using named threshold
+  constants at the top of the module — tune those per lighting setup.
+- **#24** — `face_state()` flattens the 3x3 color grid into a 9-character
+  notation string (row-major, top-to-bottom / left-to-right as seen on
+  screen) plus a `valid` flag and human-readable `issues` list when any
+  sticker couldn't be confidently classified.
+- **#25** — `draw_overlay()` outlines the detected face on the live frame,
+  shows a gridded/labeled thumbnail of the corrected face in the corner, and
+  prints the current state string (green when fully resolved, amber when
+  some stickers are ambiguous).
+
+`rubiks_cube.py --self-test` covers the pure logic — corner ordering, grid
+layout, color classification, and state validation — without a camera. The
+image-processing glue (`detect_face_quad`, `warp_face`, `classify_face`) is
+exercised against a synthetic image during development but, matching the
+other apps' style, isn't part of the hardware-free self-test.
+
+**Not included yet:** issue **#26** (on-screen solve guidance) needs a
+multi-face scan (all 6 sides) plus an actual solving algorithm — a
+meaningfully larger follow-up, not a single-face-detection feature.
 
 ## ⚠️ Important: MediaPipe version
 
