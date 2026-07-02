@@ -136,7 +136,9 @@ landmarks and needs no hardware — handy for CI or a quick sanity check. For th
 eye tracker it checks EAR (open vs. shut), gaze classification, single-blink
 debounce, the drowsiness duration threshold, and the no-blink timer. For the RPS
 game it checks gesture classification, the winner table, and the round state
-machine (scoring once per round, replaying on an unclear gesture).
+machine (scoring once per round, replaying on an unclear gesture). The same
+self-test flow is also useful as a quick smoke test after installing or updating
+dependencies.
 
 ## How it maps to the tickets
 
