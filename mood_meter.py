@@ -57,9 +57,9 @@ def main():
                             # Smiling (Happy)
                             mood_score = 50 + ((mouth_ratio - 0.40) / 0.10) * 50
                             mood_text = "Happy"
-                        elif eyebrow_ratio < 0.17:
+                        elif eyebrow_ratio < 0.20:
                             # Frowning (Mad/Sad)
-                            mood_score = ((eyebrow_ratio - 0.12) / 0.05) * 50
+                            mood_score = ((eyebrow_ratio - 0.15) / 0.05) * 50
                             mood_text = "Mad / Sad"
                         else:
                             mood_score = 50
@@ -102,8 +102,10 @@ def main():
 
             cv2.imshow('Mood Meter', image)
             
-            # Exit on ESC
+            # Exit on ESC or if window is closed
             if cv2.waitKey(5) & 0xFF == 27:
+                break
+            if cv2.getWindowProperty('Mood Meter', cv2.WND_PROP_VISIBLE) < 1:
                 break
                 
     cap.release()
