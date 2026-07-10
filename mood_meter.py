@@ -96,7 +96,11 @@ def main(argv=None):
             # Draw border
             cv2.rectangle(image, (x_offset, y_offset), (x_offset + bar_width, y_offset + bar_height), (255, 255, 255), 2)
             
-            # Add text
+            # Add text (with black outline for readability on light backgrounds)
+            # 1. Draw thick black outline
+            cv2.putText(image, f"Mood: {mood_score}/100", (x_offset, y_offset - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 4)
+            cv2.putText(image, f"State: {mood_text}", (x_offset, y_offset + bar_height + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4)
+            # 2. Draw white/gray inner text
             cv2.putText(image, f"Mood: {mood_score}/100", (x_offset, y_offset - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
             cv2.putText(image, f"State: {mood_text}", (x_offset, y_offset + bar_height + 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
 
