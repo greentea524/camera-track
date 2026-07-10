@@ -8,7 +8,7 @@ mp_face_mesh = mp.solutions.face_mesh
 def calculate_distance(p1, p2):
     return math.hypot(p1.x - p2.x, p1.y - p2.y)
 
-def main():
+def main(argv=None):
     cap = cv2.VideoCapture(0)
     
     with mp_face_mesh.FaceMesh(
