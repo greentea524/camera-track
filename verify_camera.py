@@ -82,6 +82,8 @@ def check_camera(index, show_window, scale=1.5):
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):  # 'q' or Esc
                 break
+            if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                break
         return True
     finally:
         cap.release()

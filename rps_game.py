@@ -297,6 +297,8 @@ def run_game(args):
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
                 break
+            if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                break
             if key == ord(" "):  # spacebar starts the next round
                 game.replay(now)
     finally:

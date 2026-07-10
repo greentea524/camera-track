@@ -182,6 +182,8 @@ def run(args):
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):  # KAN-21: clean exit
                 break
+            if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
+                break
     finally:
         # KAN-21: always release hardware and windows.
         cap.release()
