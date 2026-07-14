@@ -24,6 +24,7 @@ import eye_tracker
 import rps_game
 import verify_camera
 import mood_meter
+import reaction_game
 
 # Ordered menu: number -> (name, description, app entry point). The name is the
 # keyword accepted on the command line; the number is what the menu prompts for.
@@ -32,6 +33,7 @@ APPS = [
     ("eyes", "Eye tracker (gaze / blink / drowsiness)", eye_tracker.main),
     ("rps", "Rock-Paper-Scissors game", rps_game.main),
     ("mood", "Mood Meter (0-100 emotion detection)", mood_meter.main),
+    ("react", "Reaction Game (touch targets with your hand)", reaction_game.main),
     ("check", "Camera / environment check", verify_camera.main),
 ]
 
@@ -130,7 +132,8 @@ def self_test():
     check("choice '2' -> eyes", select("2"), eye_tracker.main)
     check("choice '3' -> rps", select("3"), rps_game.main)
     check("choice '4' -> mood", select("4"), mood_meter.main)
-    check("choice '5' -> check", select("5"), verify_camera.main)
+    check("choice '5' -> react", select("5"), reaction_game.main)
+    check("choice '6' -> check", select("6"), verify_camera.main)
 
     # Names map too, case-insensitively and with surrounding whitespace.
     check("name 'eyes' -> eye_tracker", select("eyes"), eye_tracker.main)
