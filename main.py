@@ -25,6 +25,7 @@ import rps_game
 import verify_camera
 import mood_meter
 import reaction_game
+import air_drum
 
 # Ordered menu: number -> (name, description, app entry point). The name is the
 # keyword accepted on the command line; the number is what the menu prompts for.
@@ -34,6 +35,7 @@ APPS = [
     ("rps", "Rock-Paper-Scissors game", rps_game.main),
     ("mood", "Mood Meter (0-100 emotion detection)", mood_meter.main),
     ("react", "Reaction Game (touch targets with your hand)", reaction_game.main),
+    ("drums", "Air Drums (virtual drum kit)", air_drum.main),
     ("check", "Camera / environment check", verify_camera.main),
 ]
 
@@ -133,7 +135,8 @@ def self_test():
     check("choice '3' -> rps", select("3"), rps_game.main)
     check("choice '4' -> mood", select("4"), mood_meter.main)
     check("choice '5' -> react", select("5"), reaction_game.main)
-    check("choice '6' -> check", select("6"), verify_camera.main)
+    check("choice '6' -> drums", select("6"), air_drum.main)
+    check("choice '7' -> check", select("7"), verify_camera.main)
 
     # Names map too, case-insensitively and with surrounding whitespace.
     check("name 'eyes' -> eye_tracker", select("eyes"), eye_tracker.main)
