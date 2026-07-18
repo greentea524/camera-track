@@ -14,7 +14,6 @@ import sys
 
 import cv2
 import numpy as np
-from pyzbar import pyzbar
 
 import display
 
@@ -92,6 +91,7 @@ import collections
 
 def run(args):
     """Live capture + QR scanning loop."""
+    from pyzbar import pyzbar
     cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
         print(f"ERROR: could not open camera index {args.camera}.")
