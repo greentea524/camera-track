@@ -27,6 +27,10 @@ import mood_meter
 import reaction_game
 import air_drum
 import qr_scanner
+import object_tracker
+import ascii_filter
+import sketch_filter
+import thermal_filter
 
 # Ordered menu: number -> (name, description, app entry point). The name is the
 # keyword accepted on the command line; the number is what the menu prompts for.
@@ -38,6 +42,10 @@ APPS = [
     ("react", "Reaction Game (touch targets with your hand)", reaction_game.main),
     ("drums", "Air Drums (virtual drum kit)", air_drum.main),
     ("scan", "QR / Barcode Scanner", qr_scanner.main),
+    ("track", "Object Tracker (HSV color tracking)", object_tracker.main),
+    ("ascii", "ASCII Art Filter (Matrix / Colorized)", ascii_filter.main),
+    ("sketch", "Pencil Sketch Filter (Grayscale / Color)", sketch_filter.main),
+    ("thermal", "Thermal Simulation Filter (JET colormap)", thermal_filter.main),
     ("check", "Camera / environment check", verify_camera.main),
 ]
 
@@ -139,14 +147,18 @@ def self_test():
     check("choice '5' -> react", select("5"), reaction_game.main)
     check("choice '6' -> drums", select("6"), air_drum.main)
     check("choice '7' -> scan", select("7"), qr_scanner.main)
-    check("choice '8' -> check", select("8"), verify_camera.main)
+    check("choice '8' -> track", select("8"), object_tracker.main)
+    check("choice '9' -> ascii", select("9"), ascii_filter.main)
+    check("choice '10' -> sketch", select("10"), sketch_filter.main)
+    check("choice '11' -> thermal", select("11"), thermal_filter.main)
+    check("choice '12' -> check", select("12"), verify_camera.main)
 
     # Names map too, case-insensitively and with surrounding whitespace.
     check("name 'eyes' -> eye_tracker", select("eyes"), eye_tracker.main)
     check("name ' RPS ' -> rps_game", select("  RPS  "), rps_game.main)
 
     # Invalid choices return None.
-    check("out-of-range number", select("9"), None)
+    check("out-of-range number", select("13"), None)
     check("unknown name", select("nope"), None)
     check("empty choice", select(""), None)
     check("None choice", select(None), None)
