@@ -10,3 +10,4 @@ numpy<2
 # but falls back to Windows-only beeps (or silence elsewhere) and says so in
 # the HUD. Compatible with the numpy<2 pin above.
 pygame>=2.5,<3
+pyzbar
