@@ -106,8 +106,9 @@ def main(argv=None):
 
             cv2.imshow('Mood Meter', image)
             
-            # Exit on ESC or if window is closed
-            if cv2.waitKey(5) & 0xFF == 27:
+            # Exit on ESC, 'q', or if window is closed
+            key = cv2.waitKey(5) & 0xFF
+            if key in (ord("q"), ord("Q"), 27):
                 break
             if cv2.getWindowProperty('Mood Meter', cv2.WND_PROP_VISIBLE) < 1:
                 break
