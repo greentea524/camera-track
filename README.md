@@ -21,12 +21,21 @@ Or launch any of them from a single menu with **`main.py`** (KAN-35).
 | `hand_counter.py`  | The finger-counting app (KAN-16–21).                      |
 | `eye_tracker.py`   | Gaze / blink / drowsiness / no-blink tracker (KAN-24–32). |
 | `rps_game.py`      | Rock-Paper-Scissors gesture game (KAN-33–34).             |
+| `air_drum.py`      | Virtual drum kit with synthesised audio (#32).             |
 | `verify_camera.py` | Environment/webcam smoke-test (KAN-15).                   |
 | `display.py`       | Shared resizable-preview-window helper.                   |
 | `requirements.txt` | Pinned dependencies.                                      |
 
 Every app opens a **resizable** preview window (drag to resize) at 1.5× the
 camera frame by default; tune the initial size with `--display-scale`.
+
+### Drum audio
+
+`air_drum.py` synthesises its six drum voices with numpy at startup (no `.wav`
+assets to ship), and plays them through **pygame.mixer** so hits can overlap
+and scale in volume with how hard you strike. Without pygame it falls back to
+Windows `winsound` beeps, and to silence elsewhere — the HUD always shows which
+backend is live, so a silent kit is never a mystery.
 
 ## Setup
 

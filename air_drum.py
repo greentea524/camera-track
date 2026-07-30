@@ -22,6 +22,8 @@ import sys
 import threading
 import time
 
+import numpy as np
+
 import display
 
 # MediaPipe landmark indices
@@ -29,34 +31,240 @@ WRIST = 0
 INDEX_TIP = 8
 MIDDLE_TIP = 12
 
-# Drum pad note frequencies (Hz) — pentatonic-ish for pleasant sounds
+# Audio synthesis settings
+SAMPLE_RATE = 44100
+
+# Drum pads. "voice" selects the synthesised percussion sample; "freq"/"dur"
+# are only used by the winsound fallback, which can emit tones but not noise.
 DRUM_PADS = [
-    {"name": "Hi-Hat",   "freq": 800, "dur": 80,  "color": (0, 220, 220)},
-    {"name": "Snare",    "freq": 400, "dur": 100,  "color": (100, 180, 255)},
-    {"name": "Tom",      "freq": 300, "dur": 120,  "color": (180, 100, 255)},
-    {"name": "Kick",     "freq": 150, "dur": 150,  "color": (255, 100, 100)},
-    {"name": "Crash",    "freq": 600, "dur": 90,   "color": (100, 255, 100)},
-    {"name": "Ride",     "freq": 700, "dur": 70,   "color": (255, 200, 50)},
+    {"name": "Hi-Hat", "voice": "hihat", "freq": 800, "dur": 80,  "color": (0, 220, 220)},
+    {"name": "Snare",  "voice": "snare", "freq": 400, "dur": 100, "color": (100, 180, 255)},
+    {"name": "Tom",    "voice": "tom",   "freq": 300, "dur": 120, "color": (180, 100, 255)},
+    {"name": "Kick",   "voice": "kick",  "freq": 150, "dur": 150, "color": (255, 100, 100)},
+    {"name": "Crash",  "voice": "crash", "freq": 600, "dur": 90,  "color": (100, 255, 100)},
+    {"name": "Ride",   "voice": "ride",  "freq": 700, "dur": 70,  "color": (255, 200, 50)},
 ]
 
+# Strike velocity (normalized units/sec) mapped onto playback gain. A strike at
+# the detection threshold plays at MIN_GAIN; VELOCITY_CEILING and above plays
+# at full volume.
+VELOCITY_CEILING = 4.0
+MIN_GAIN = 0.35
+
 
 # ---------------------------------------------------------------------------
-# Sound playback (non-blocking, Windows-native, zero dependencies)
+# Drum sample synthesis
+#
+# Samples are generated with numpy at startup rather than shipped as .wav
+# assets, so the repo stays free of binary files and the kit stays tweakable.
+# Each synth returns a mono float32 array in [-1, 1].
 # ---------------------------------------------------------------------------
 
-def _play_tone(freq, duration_ms):
-    """Play a tone in a background thread so the camera loop doesn't stall."""
-    try:
-        import winsound
-        winsound.Beep(freq, duration_ms)
-    except Exception:
-        pass  # Silently skip on non-Windows or if audio fails
+def _envelope(n, decay, attack=64):
+    """Exponential decay envelope with a short attack ramp (declicks the onset)."""
+    t = np.arange(n) / SAMPLE_RATE
+    env = np.exp(-t / decay)
+    a = min(attack, n)
+    if a > 0:
+        env[:a] *= np.linspace(0.0, 1.0, a)
+    return env
 
 
-def play_sound(freq, duration_ms):
-    """Fire-and-forget tone playback."""
-    t = threading.Thread(target=_play_tone, args=(freq, duration_ms), daemon=True)
-    t.start()
+def _swept_sine(n, f_start, f_end, sweep_time):
+    """Sine whose frequency decays exponentially from f_start to f_end."""
+    t = np.arange(n) / SAMPLE_RATE
+    freq = f_end + (f_start - f_end) * np.exp(-t / sweep_time)
+    phase = 2 * np.pi * np.cumsum(freq) / SAMPLE_RATE
+    return np.sin(phase)
+
+
+def _noise(n, rng, brightness=1):
+    """White noise, optionally differentiated to tilt energy toward high frequencies."""
+    sig = rng.standard_normal(n)
+    for _ in range(brightness):
+        sig = np.diff(sig, prepend=0.0)
+    return sig
+
+
+def _normalize(sig, peak=0.95):
+    """Scale to a target peak so pads sit at comparable loudness."""
+    m = float(np.max(np.abs(sig)))
+    if m < 1e-9:
+        return sig.astype(np.float32)
+    return (sig * (peak / m)).astype(np.float32)
+
+
+def _synth_kick(rng):
+    n = int(SAMPLE_RATE * 0.38)
+    t = np.arange(n) / SAMPLE_RATE
+    body = _swept_sine(n, 120.0, 45.0, 0.06) * _envelope(n, 0.13)
+    click = _noise(n, rng) * np.exp(-t / 0.004) * 0.35
+    return _normalize(body + click)
+
+
+def _synth_snare(rng):
+    """Noise rattle over a tuned drum body.
+
+    The body carries most of the level: a rattle-only snare reads as hiss
+    rather than a drum, so the 185/330 Hz pair is kept prominent.
+    """
+    n = int(SAMPLE_RATE * 0.22)
+    t = np.arange(n) / SAMPLE_RATE
+    rattle = _noise(n, rng, brightness=1) * _envelope(n, 0.070) * 0.30
+    body = (np.sin(2 * np.pi * 185 * t) * 1.0 + np.sin(2 * np.pi * 330 * t) * 0.55)
+    body *= _envelope(n, 0.085)
+    return _normalize(rattle + body)
+
+
+def _synth_hihat(rng):
+    n = int(SAMPLE_RATE * 0.07)
+    return _normalize(_noise(n, rng, brightness=2) * _envelope(n, 0.018))
+
+
+def _synth_tom(rng):
+    n = int(SAMPLE_RATE * 0.30)
+    body = _swept_sine(n, 180.0, 95.0, 0.08) * _envelope(n, 0.11)
+    skin = _noise(n, rng) * _envelope(n, 0.012) * 0.2
+    return _normalize(body + skin)
+
+
+def _synth_crash(rng):
+    n = int(SAMPLE_RATE * 1.40)
+    t = np.arange(n) / SAMPLE_RATE
+    wash = _noise(n, rng, brightness=1) * _envelope(n, 0.55)
+    shimmer = _noise(n, rng, brightness=2) * np.exp(-t / 0.20) * 0.6
+    return _normalize(wash + shimmer)
+
+
+def _synth_ride(rng):
+    n = int(SAMPLE_RATE * 0.90)
+    t = np.arange(n) / SAMPLE_RATE
+    ping = (np.sin(2 * np.pi * 720 * t) + np.sin(2 * np.pi * 1180 * t) * 0.6)
+    ping *= _envelope(n, 0.10)
+    wash = _noise(n, rng, brightness=2) * _envelope(n, 0.35) * 0.55
+    return _normalize(ping * 0.8 + wash)
+
+
+_SYNTHS = {
+    "kick": _synth_kick,
+    "snare": _synth_snare,
+    "hihat": _synth_hihat,
+    "tom": _synth_tom,
+    "crash": _synth_crash,
+    "ride": _synth_ride,
+}
+
+
+def build_samples(seed=7):
+    """Render every drum voice. Returns {voice_name: float32 mono array}."""
+    rng = np.random.default_rng(seed)
+    return {name: fn(rng) for name, fn in _SYNTHS.items()}
+
+
+def velocity_to_gain(velocity, threshold):
+    """Map a strike velocity onto a 0..1 playback gain.
+
+    Anything at or below the detection threshold plays at MIN_GAIN; the gain
+    rises linearly to 1.0 at VELOCITY_CEILING so harder hits are louder.
+    """
+    if velocity is None or velocity <= threshold:
+        return MIN_GAIN
+    span = max(VELOCITY_CEILING - threshold, 1e-6)
+    frac = min(1.0, (velocity - threshold) / span)
+    return MIN_GAIN + (1.0 - MIN_GAIN) * frac
+
+
+# ---------------------------------------------------------------------------
+# Playback backends
+#
+# pygame.mixer is preferred: it is cross-platform and mixes overlapping hits,
+# which matters for a drum kit. winsound is a Windows-only fallback that can
+# only manage single square-wave beeps. If neither is available the kit still
+# runs silently, but says so in the HUD instead of failing quietly.
+# ---------------------------------------------------------------------------
+
+class AudioEngine:
+    """Plays drum samples with velocity-scaled volume."""
+
+    def __init__(self):
+        self.backend = "silent"
+        self.status = "no audio backend"
+        self._sounds = {}
+        self._mixer = None
+
+    def start(self):
+        if self._start_pygame():
+            return self
+        if self._start_winsound():
+            return self
+        self.backend = "silent"
+        self.status = "silent (install pygame for sound)"
+        return self
+
+    def _start_pygame(self):
+        try:
+            import pygame
+        except Exception:
+            return False
+        try:
+            pygame.mixer.pre_init(frequency=SAMPLE_RATE, size=-16, channels=2, buffer=512)
+            pygame.mixer.init()
+            # Enough channels that fast fills and both hands never cut each other off.
+            pygame.mixer.set_num_channels(24)
+        except Exception as exc:
+            print(f"[warn] pygame mixer unavailable ({exc}); trying fallback.")
+            return False
+
+        for voice, mono in build_samples().items():
+            stereo = np.repeat((np.clip(mono, -1.0, 1.0) * 32767).astype(np.int16)[:, None], 2, axis=1)
+            self._sounds[voice] = pygame.sndarray.make_sound(np.ascontiguousarray(stereo))
+
+        self._mixer = pygame
+        self.backend = "pygame"
+        self.status = "pygame mixer"
+        return True
+
+    def _start_winsound(self):
+        try:
+            import winsound  # noqa: F401  (Windows only)
+        except Exception:
+            return False
+        self.backend = "winsound"
+        self.status = "winsound beeps (no samples)"
+        return True
+
+    def play(self, pad, velocity=None, threshold=0.0):
+        """Fire-and-forget playback of one pad at a velocity-scaled volume."""
+        gain = velocity_to_gain(velocity, threshold)
+
+        if self.backend == "pygame":
+            snd = self._sounds.get(pad["voice"])
+            if snd is None:
+                return
+            channel = self._mixer.mixer.find_channel(True)
+            if channel is None:
+                return
+            channel.set_volume(gain)
+            channel.play(snd)
+        elif self.backend == "winsound":
+            threading.Thread(
+                target=self._beep, args=(pad["freq"], pad["dur"]), daemon=True
+            ).start()
+
+    @staticmethod
+    def _beep(freq, duration_ms):
+        try:
+            import winsound
+            winsound.Beep(int(freq), int(duration_ms))
+        except Exception as exc:
+            print(f"[warn] beep failed: {exc}")
+
+    def close(self):
+        if self.backend == "pygame" and self._mixer is not None:
+            try:
+                self._mixer.mixer.quit()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -75,12 +283,17 @@ class StrikeDetector:
     def __init__(self, velocity_threshold=0.8, cooldown=0.25):
         self.velocity_threshold = velocity_threshold
         self.cooldown = cooldown
+        # Velocity of the most recent strike, so callers can scale hit volume.
+        self.last_velocity = 0.0
         self._prev_y = None
         self._prev_time = None
         self._last_strike = 0.0
 
     def update(self, y):
-        """Feed a new normalized y value. Returns True if a strike occurred."""
+        """Feed a new normalized y value. Returns True if a strike occurred.
+
+        On a strike, `last_velocity` holds the downward speed that triggered it.
+        """
         now = time.time()
 
         if self._prev_y is None:
@@ -98,6 +311,7 @@ class StrikeDetector:
 
         if velocity > self.velocity_threshold and (now - self._last_strike) > self.cooldown:
             self._last_strike = now
+            self.last_velocity = velocity
             return True
 
         return False
@@ -170,7 +384,7 @@ def draw_pads(cv2, frame, regions, flash_indices):
         _outlined_text(cv2, frame, pad["name"], (text_x, text_y), 0.5, (255, 255, 255), 1)
 
 
-def draw_hud(cv2, frame, hit_count):
+def draw_hud(cv2, frame, hit_count, audio_status=None):
     """Render the top HUD bar."""
     h, w = frame.shape[:2]
     overlay = frame.copy()
@@ -179,6 +393,12 @@ def draw_hud(cv2, frame, hit_count):
 
     _outlined_text(cv2, frame, "Air Drums", (20, 35), 0.9, (0, 220, 220))
     _outlined_text(cv2, frame, f"Hits: {hit_count}", (w - 180, 35), 0.7, (200, 200, 200))
+
+    # Surface the audio backend so a silent kit is obvious rather than baffling.
+    if audio_status:
+        muted = audio_status.startswith("silent")
+        color = (120, 120, 255) if muted else (160, 200, 160)
+        _outlined_text(cv2, frame, f"Audio: {audio_status}", (20, 68), 0.5, color, 1)
 
 
 def draw_fingertip(cv2, frame, fx, fy, color=(255, 0, 255)):
@@ -219,9 +439,13 @@ def run(args):
     hit_count = 0
     flash_until = {}   # pad_index -> time when flash expires
 
+    audio = AudioEngine().start()
+
     window = "Air Drums (q/Esc to quit)"
     sized = False
-    print("Air Drums starting — press 'q' or Esc to quit.")
+    print(f"Air Drums starting — audio: {audio.status}. Press 'q' or Esc to quit.")
+    if audio.backend == "silent":
+        print("[warn] no audio backend found; install pygame for drum sounds.")
 
     try:
         while True:
@@ -264,17 +488,19 @@ def run(args):
                     draw_fingertip(cv2, frame, fx, fy, tip_color)
 
                     # Check for strike
-                    if detectors[hand_idx].update(tip.y):
+                    detector = detectors[hand_idx]
+                    if detector.update(tip.y):
                         pad_idx = find_pad_at(fx, fy, regions)
                         if pad_idx >= 0:
                             pad = DRUM_PADS[pad_idx]
-                            play_sound(pad["freq"], pad["dur"])
+                            audio.play(pad, detector.last_velocity,
+                                       detector.velocity_threshold)
                             hit_count += 1
                             flash_until[pad_idx] = now + 0.15
                             active_flashes.add(pad_idx)
 
             draw_pads(cv2, frame, regions, active_flashes)
-            draw_hud(cv2, frame, hit_count)
+            draw_hud(cv2, frame, hit_count, audio.status)
 
             if not sized:
                 display.open_window(cv2, window, frame)
@@ -289,6 +515,7 @@ def run(args):
     finally:
         cap.release()
         hands.close()
+        audio.close()
         cv2.destroyAllWindows()
     return 0
 
@@ -337,6 +564,41 @@ def self_test():
     sd3._prev_time = time.time() - 0.05
     sd3._last_strike = time.time()  # just struck
     check("cooldown prevents re-strike", sd3.update(0.4), False)
+
+    # Strike velocity is recorded for volume scaling
+    sd4 = StrikeDetector(velocity_threshold=0.5, cooldown=0.0)
+    sd4._prev_y = 0.3
+    sd4._prev_time = time.time() - 0.05
+    sd4.update(0.4)   # ~2.0 units/sec
+    check("strike records velocity", 1.5 < sd4.last_velocity < 2.5, True)
+
+    # Velocity -> gain mapping
+    check("at threshold = min gain", velocity_to_gain(0.8, 0.8), MIN_GAIN)
+    check("below threshold = min gain", velocity_to_gain(0.1, 0.8), MIN_GAIN)
+    check("at ceiling = full gain", velocity_to_gain(VELOCITY_CEILING, 0.8), 1.0)
+    check("above ceiling clamps to 1.0", velocity_to_gain(99.0, 0.8), 1.0)
+    mid = velocity_to_gain(2.4, 0.8)
+    check("hard hit louder than soft", mid > velocity_to_gain(1.0, 0.8), True)
+    check("mid gain stays in range", MIN_GAIN < mid < 1.0, True)
+
+    # Synthesised samples
+    samples = build_samples()
+    check("one sample per voice", sorted(samples) == sorted(_SYNTHS), True)
+    check("every pad has a voice",
+          all(p["voice"] in samples for p in DRUM_PADS), True)
+    check("kick is longer than hi-hat",
+          len(samples["kick"]) > len(samples["hihat"]), True)
+    check("samples stay within [-1, 1]",
+          all(float(np.max(np.abs(s))) <= 1.0 for s in samples.values()), True)
+    check("samples are non-silent",
+          all(float(np.max(np.abs(s))) > 0.5 for s in samples.values()), True)
+    check("samples are finite",
+          all(bool(np.all(np.isfinite(s))) for s in samples.values()), True)
+
+    # A silent engine must still be safe to call
+    engine = AudioEngine()
+    engine.play(DRUM_PADS[0], 2.0, 0.8)   # no backend started; must not raise
+    check("silent engine tolerates play()", engine.backend, "silent")
 
     print("\nSelf-test", "passed." if all_ok else "FAILED.")
     return 0 if all_ok else 1

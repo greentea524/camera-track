@@ -5,3 +5,8 @@
 mediapipe==0.10.21
 opencv-python==4.11.0.86
 numpy<2
+
+# Cross-platform audio for air_drum.py. Without it the drum kit still runs,
+# but falls back to Windows-only beeps (or silence elsewhere) and says so in
+# the HUD. Compatible with the numpy<2 pin above.
+pygame>=2.5,<3
