@@ -160,10 +160,8 @@ class FruitNinjaGame:
 
     def __init__(self):
         self.score = 0
-        self.lives = 3
         self.fruits = []          # active Fruit objects
         self.halves = []          # SlicedHalf debris
-        self.game_over = False
         self._last_spawn = 0.0
         self._spawn_interval = 1.2   # seconds between waves
         self._combo = 0
@@ -212,9 +210,7 @@ class FruitNinjaGame:
                 sliced.append(fruit)
 
                 if fruit.is_bomb:
-                    self.lives -= 1
-                    if self.lives <= 0:
-                        self.game_over = True
+                    self.score = max(0, self.score - 3)
                 else:
                     self.score += 1
                     self._combo += 1
@@ -236,9 +232,6 @@ class FruitNinjaGame:
 
     def update(self, frame_w, frame_h, dt):
         """Advance the game by dt seconds. Call once per frame."""
-        if self.game_over:
-            return
-
         now = time.time()
 
         # Spawn new wave
@@ -249,13 +242,6 @@ class FruitNinjaGame:
         # Update fruit physics
         for fruit in self.fruits:
             fruit.update(dt)
-
-        # Check for missed fruits (fell off screen without being sliced)
-        missed = [f for f in self.fruits if f.is_offscreen(frame_h) and not f.sliced and not f.is_bomb]
-        for _ in missed:
-            self.lives -= 1
-            if self.lives <= 0:
-                self.game_over = True
 
         # Remove offscreen / sliced fruits
         self.fruits = [f for f in self.fruits if not f.is_offscreen(frame_h) and not f.sliced]
@@ -346,7 +332,6 @@ def draw_hud(cv2, frame, game):
     cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
 
     _outlined_text(cv2, frame, f"Score: {game.score}", (20, 35), 0.9, (0, 255, 200))
-    _outlined_text(cv2, frame, f"Lives: {'*' * max(0, game.lives)}", (20, 65), 0.7, (100, 180, 255))
 
     # Mode label
     _outlined_text(cv2, frame, "FRUIT NINJA", (w - 220, 35), 0.7, (0, 200, 255))
@@ -356,16 +341,7 @@ def draw_hud(cv2, frame, game):
         _outlined_text(cv2, frame, game._combo_display, (w // 2 - 100, h // 2), 1.2, (0, 255, 255), 3)
 
 
-def draw_game_over(cv2, frame, game):
-    """Overlay game-over screen."""
-    h, w = frame.shape[:2]
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (w, h), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
 
-    _outlined_text(cv2, frame, "GAME OVER", (w // 2 - 150, h // 2 - 40), 1.5, (0, 0, 255), 3)
-    _outlined_text(cv2, frame, f"Final Score: {game.score}", (w // 2 - 130, h // 2 + 20), 1.0, (255, 255, 255))
-    _outlined_text(cv2, frame, "Press SPACE to restart  |  Q to quit", (w // 2 - 250, h // 2 + 70), 0.7, (180, 180, 180))
 
 
 # ---------------------------------------------------------------------------
@@ -438,19 +414,18 @@ def run(args):
                     cur_tips[hand_idx] = (int(tip.x * w), int(tip.y * h))
 
             # Slice detection & trail management for each hand
-            if not game.game_over:
-                for i in range(2):
-                    if cur_tips[i] is not None:
-                        trails[i].append(cur_tips[i])
+            for i in range(2):
+                if cur_tips[i] is not None:
+                    trails[i].append(cur_tips[i])
 
-                        if prev_tips[i] is not None:
-                            # Check slice
-                            px, py = prev_tips[i]
-                            cx, cy = cur_tips[i]
-                            game.try_slice(px, py, cx, cy)
-                    else:
-                        if len(trails[i]) > 0:
-                            trails[i].popleft()
+                    if prev_tips[i] is not None:
+                        # Check slice
+                        px, py = prev_tips[i]
+                        cx, cy = cur_tips[i]
+                        game.try_slice(px, py, cx, cy)
+                else:
+                    if len(trails[i]) > 0:
+                        trails[i].popleft()
 
             prev_tips = list(cur_tips)
 
@@ -479,9 +454,6 @@ def run(args):
 
             draw_hud(cv2, frame, game)
 
-            if game.game_over:
-                draw_game_over(cv2, frame, game)
-
             if not sized:
                 display.open_window(cv2, window, frame)
                 sized = True
@@ -492,10 +464,6 @@ def run(args):
                 break
             if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
                 break
-            if key == ord(" ") and game.game_over:
-                game.restart()
-                trails = [collections.deque(maxlen=12) for _ in range(2)]
-                prev_tips = [None, None]
     finally:
         cap.release()
         hands.close()
@@ -536,8 +504,6 @@ def self_test():
     # Game initialization
     g = FruitNinjaGame()
     check("initial score", g.score, 0)
-    check("initial lives", g.lives, 3)
-    check("not game over initially", g.game_over, False)
 
     # Fruit physics
     f = Fruit(100, 100, 50, -200, FRUIT_TYPES[0], spawn_time=time.time())
@@ -554,14 +520,14 @@ def self_test():
 
     # Bomb slicing
     g3 = FruitNinjaGame()
+    g3.score = 5
     g3.fruits.append(Fruit(100, 100, 0, 0, BOMB))
     g3.try_slice(50, 100, 150, 100)
-    check("bomb costs a life", g3.lives, 2)
+    check("bomb deducts 3 from score", g3.score, 2)
 
     # Restart
     g2.restart()
     check("restart resets score", g2.score, 0)
-    check("restart resets lives", g2.lives, 3)
 
     # Spawn interval ramp
     g4 = FruitNinjaGame()
