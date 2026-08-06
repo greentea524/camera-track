@@ -107,6 +107,76 @@ class SlicedHalf:
         return max(0.0, 1.0 - (time.time() - self.spawn_time) / self.lifetime)
 
 
+class JuiceParticle:
+    """A particle burst droplet when a fruit is sliced."""
+
+    def __init__(self, x, y, color):
+        self.x = float(x)
+        self.y = float(y)
+        angle = random.uniform(0, 2 * math.pi)
+        speed = random.uniform(150, 450)
+        self.vx = math.cos(angle) * speed
+        self.vy = math.sin(angle) * speed
+        self.color = color
+        self.radius = random.uniform(3, 8)
+        self.spawn_time = time.time()
+        self.lifetime = random.uniform(0.3, 0.6)
+
+    def update(self, dt):
+        self.vy += GRAVITY * 0.5 * dt
+        self.x += self.vx * dt
+        self.y += self.vy * dt
+        self.radius = max(1.0, self.radius - dt * 6)
+
+    def is_expired(self):
+        return time.time() - self.spawn_time > self.lifetime
+
+    def opacity(self):
+        return max(0.0, 1.0 - (time.time() - self.spawn_time) / self.lifetime)
+
+
+class SliceFlash:
+    """A glowing flash line segment along the cut vector."""
+
+    def __init__(self, x1, y1, x2, y2, color=(255, 255, 255)):
+        self.x1 = int(x1)
+        self.y1 = int(y1)
+        self.x2 = int(x2)
+        self.y2 = int(y2)
+        self.color = color
+        self.spawn_time = time.time()
+        self.lifetime = 0.2
+
+    def is_expired(self):
+        return time.time() - self.spawn_time > self.lifetime
+
+    def opacity(self):
+        return max(0.0, 1.0 - (time.time() - self.spawn_time) / self.lifetime)
+
+
+class FloatingPopup:
+    """A floating text indicator (+1, +3, BOOM!)."""
+
+    def __init__(self, x, y, text, color=(0, 255, 255), scale=0.8):
+        self.x = float(x)
+        self.y = float(y)
+        self.text = text
+        self.color = color
+        self.scale = scale
+        self.vy = -90.0  # float upward
+        self.spawn_time = time.time()
+        self.lifetime = 0.8
+
+    def update(self, dt):
+        self.y += self.vy * dt
+
+    def is_expired(self):
+        return time.time() - self.spawn_time > self.lifetime
+
+    def opacity(self):
+        return max(0.0, 1.0 - (time.time() - self.spawn_time) / self.lifetime)
+
+
 # ---------------------------------------------------------------------------
 # Geometry: line-segment vs circle intersection for slice detection
 # ---------------------------------------------------------------------------
@@ -162,6 +232,9 @@ class FruitNinjaGame:
         self.score = 0
         self.fruits = []          # active Fruit objects
         self.halves = []          # SlicedHalf debris
+        self.particles = []       # JuiceParticle objects
+        self.flashes = []         # SliceFlash objects
+        self.popups = []          # FloatingPopup objects
         self._last_spawn = 0.0
         self._spawn_interval = 1.2   # seconds between waves
         self._combo = 0
@@ -209,12 +282,28 @@ class FruitNinjaGame:
                 fruit.sliced = True
                 sliced.append(fruit)
 
+                # Create slice flash effect
+                self.flashes.append(SliceFlash(prev_x, prev_y, cur_x, cur_y))
+
                 if fruit.is_bomb:
                     self.score = max(0, self.score - 3)
+                    self.popups.append(FloatingPopup(fruit.x, fruit.y, "BOOM! -3", (0, 0, 255), scale=1.0))
+                    # Spawn explosive dark/orange particles
+                    for _ in range(20):
+                        pcolor = random.choice([(0, 100, 255), (0, 0, 255), (50, 50, 50)])
+                        self.particles.append(JuiceParticle(fruit.x, fruit.y, pcolor))
                 else:
                     self.score += 1
                     self._combo += 1
                     self._combo_time = time.time()
+
+                    pts_text = f"+{self._combo}" if self._combo > 1 else "+1"
+                    pts_color = (0, 255, 255) if self._combo > 1 else (0, 255, 0)
+                    self.popups.append(FloatingPopup(fruit.x, fruit.y, pts_text, pts_color, scale=0.85))
+
+                    # Spawn juice splatter particles
+                    for _ in range(14):
+                        self.particles.append(JuiceParticle(fruit.x, fruit.y, fruit.color))
 
                 # Create split halves
                 angle = math.atan2(cur_y - prev_y, cur_x - prev_x)
@@ -250,6 +339,19 @@ class FruitNinjaGame:
         for half in self.halves:
             half.update(dt)
         self.halves = [h for h in self.halves if not h.is_expired()]
+
+        # Update particles
+        for p in self.particles:
+            p.update(dt)
+        self.particles = [p for p in self.particles if not p.is_expired()]
+
+        # Update popups
+        for pop in self.popups:
+            pop.update(dt)
+        self.popups = [pop for pop in self.popups if not pop.is_expired()]
+
+        # Update flashes
+        self.flashes = [f for f in self.flashes if not f.is_expired()]
 
         # Reset combo after 0.8s of no slicing
         if self._combo > 0 and now - self._combo_time > 0.8:
@@ -307,6 +409,31 @@ def draw_half(cv2, frame, half):
     dx = int(r * math.cos(half.angle))
     dy = int(r * math.sin(half.angle))
     cv2.line(frame, (cx - dx, cy - dy), (cx + dx, cy + dy), (200, 200, 200), 1)
+
+
+def draw_particle(cv2, frame, particle):
+    """Draw a juice splatter particle fading out."""
+    cx, cy = int(particle.x), int(particle.y)
+    r = max(1, int(particle.radius))
+    alpha = particle.opacity()
+    color = tuple(int(c * alpha) for c in particle.color)
+    cv2.circle(frame, (cx, cy), r, color, -1)
+
+
+def draw_flash(cv2, frame, flash):
+    """Draw a glowing slice line flash."""
+    alpha = flash.opacity()
+    color = tuple(int(c * alpha) for c in flash.color)
+    cv2.line(frame, (flash.x1, flash.y1), (flash.x2, flash.y2), color, 4)
+    cv2.line(frame, (flash.x1, flash.y1), (flash.x2, flash.y2), (255, 255, 255), 2)
+
+
+def draw_popup(cv2, frame, popup):
+    """Draw a floating text popup."""
+    cx, cy = int(popup.x), int(popup.y)
+    alpha = popup.opacity()
+    color = tuple(int(c * alpha) for c in popup.color)
+    _outlined_text(cv2, frame, popup.text, (cx - 20, cy), popup.scale, color, 2)
 
 
 def draw_slash_trail(cv2, frame, trail, color=(0, 255, 255)):
@@ -439,6 +566,18 @@ def run(args):
             # Draw sliced halves
             for half in game.halves:
                 draw_half(cv2, frame, half)
+
+            # Draw juice particles
+            for particle in game.particles:
+                draw_particle(cv2, frame, particle)
+
+            # Draw slice flashes
+            for flash in game.flashes:
+                draw_flash(cv2, frame, flash)
+
+            # Draw floating popups
+            for popup in game.popups:
+                draw_popup(cv2, frame, popup)
 
             # Draw slash trails
             for i in range(2):
