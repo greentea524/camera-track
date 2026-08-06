@@ -31,6 +31,7 @@ import object_tracker
 import ascii_filter
 import sketch_filter
 import thermal_filter
+import fruit_ninja
 
 # Ordered menu: number -> (name, description, app entry point). The name is the
 # keyword accepted on the command line; the number is what the menu prompts for.
@@ -46,6 +47,7 @@ APPS = [
     ("ascii", "ASCII Art Filter (Matrix / Colorized)", ascii_filter.main),
     ("sketch", "Pencil Sketch Filter (Grayscale / Color)", sketch_filter.main),
     ("thermal", "Thermal Simulation Filter (JET colormap)", thermal_filter.main),
+    ("ninja", "Fruit Ninja (slice flying targets)", fruit_ninja.main),
     ("check", "Camera / environment check", verify_camera.main),
 ]
 
@@ -151,14 +153,15 @@ def self_test():
     check("choice '9' -> ascii", select("9"), ascii_filter.main)
     check("choice '10' -> sketch", select("10"), sketch_filter.main)
     check("choice '11' -> thermal", select("11"), thermal_filter.main)
-    check("choice '12' -> check", select("12"), verify_camera.main)
+    check("choice '12' -> ninja", select("12"), fruit_ninja.main)
+    check("choice '13' -> check", select("13"), verify_camera.main)
 
     # Names map too, case-insensitively and with surrounding whitespace.
     check("name 'eyes' -> eye_tracker", select("eyes"), eye_tracker.main)
     check("name ' RPS ' -> rps_game", select("  RPS  "), rps_game.main)
 
     # Invalid choices return None.
-    check("out-of-range number", select("13"), None)
+    check("out-of-range number", select("14"), None)
     check("unknown name", select("nope"), None)
     check("empty choice", select(""), None)
     check("None choice", select(None), None)
