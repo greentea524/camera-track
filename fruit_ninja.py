@@ -578,8 +578,8 @@ def run(args):
     hands = mp_hands.Hands(
         static_image_mode=False,
         max_num_hands=2,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.5,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.4,
     )
 
     game = FruitNinjaGame()
@@ -589,6 +589,7 @@ def run(args):
     # Trail history per hand (up to 2 hands)
     trails = [collections.deque(maxlen=12) for _ in range(2)]
     prev_tips = [None, None]   # previous frame fingertip positions
+    prev2_tips = [None, None]  # 2 frames ago position for velocity extrapolation
 
     trail_colors = [(0, 255, 255), (255, 100, 255)]  # yellow, pink
 
@@ -626,6 +627,16 @@ def run(args):
                     tip = hand_lm.landmark[INDEX_TIP]
                     cur_tips[hand_idx] = (int(tip.x * w), int(tip.y * h))
 
+            # Velocity extrapolation for 1 frame if hand was missed due to fast motion blur
+            for i in range(2):
+                if cur_tips[i] is None and prev_tips[i] is not None and prev2_tips[i] is not None:
+                    vx = prev_tips[i][0] - prev2_tips[i][0]
+                    vy = prev_tips[i][1] - prev2_tips[i][1]
+                    # Only extrapolate if the hand was moving fast (> 15px/frame)
+                    if math.hypot(vx, vy) > 15:
+                        extrapolated = (prev_tips[i][0] + vx, prev_tips[i][1] + vy)
+                        cur_tips[i] = extrapolated
+
             # Slice detection & trail management for each hand
             for i in range(2):
                 if cur_tips[i] is not None:
@@ -640,6 +651,7 @@ def run(args):
                     if len(trails[i]) > 0:
                         trails[i].popleft()
 
+            prev2_tips = list(prev_tips)
             prev_tips = list(cur_tips)
 
             # Update game physics
