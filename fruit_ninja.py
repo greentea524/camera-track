@@ -374,41 +374,127 @@ def _outlined_text(cv2, frame, text, pos, scale, fg, thickness=2):
 
 
 def draw_fruit(cv2, frame, fruit):
-    """Draw a single fruit with highlight and shadow."""
+    """Draw detailed fruit graphics matching each fruit type."""
     cx, cy = fruit.center()
     r = fruit.radius
-
-    # Main body
-    cv2.circle(frame, (cx, cy), r, fruit.color, -1)
+    name = fruit.fruit_type.get("name", "")
 
     if fruit.is_bomb:
-        # Draw fuse line and X
-        cv2.line(frame, (cx, cy - r), (cx + 8, cy - r - 15), (0, 180, 255), 2)
-        cv2.circle(frame, (cx + 8, cy - r - 15), 4, (0, 200, 255), -1)
-        _outlined_text(cv2, frame, "X", (cx - 8, cy + 6), 0.5, (0, 0, 200), 2)
-    else:
-        # Highlight spot
-        hx = cx - r // 3
-        hy = cy - r // 3
-        cv2.circle(frame, (hx, hy), max(3, r // 4), (255, 255, 255), -1)
+        # Bomb: Metallic dark sphere
+        cv2.circle(frame, (cx, cy), r, (35, 35, 35), -1)
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), r // 2, (70, 70, 70), -1)
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), r // 4, (120, 120, 120), -1)
+        # Fuse wire
+        fuse_tip = (cx + 10, cy - r - 14)
+        cv2.line(frame, (cx, cy - r + 3), fuse_tip, (40, 80, 120), 3)
+        # Animated spark on fuse tip
+        t = time.time()
+        spark_color = (0, random.randint(180, 255), 255)
+        cv2.circle(frame, fuse_tip, random.randint(3, 6), spark_color, -1)
+        # Spark rays
+        for angle in [0, 1.2, 2.4, 3.6, 4.8]:
+            sx = int(fuse_tip[0] + math.cos(angle + t * 10) * 8)
+            sy = int(fuse_tip[1] + math.sin(angle + t * 10) * 8)
+            cv2.line(frame, fuse_tip, (sx, sy), (0, 255, 255), 1)
+        # Bomb outline
+        cv2.circle(frame, (cx, cy), r, (150, 150, 150), 2)
+        return
 
-    # Outline
+    if name == "Apple":
+        # Red apple body
+        cv2.circle(frame, (cx, cy), r, (10, 10, 220), -1)
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), r // 3, (80, 80, 255), -1)
+        # Indentation top
+        cv2.ellipse(frame, (cx, cy - r + 4), (r // 3, r // 6), 0, 0, 360, (0, 0, 160), -1)
+        # Brown stem
+        cv2.line(frame, (cx, cy - r + 4), (cx + 4, cy - r - 12), (30, 60, 100), 3)
+        # Green leaf
+        cv2.ellipse(frame, (cx + 10, cy - r - 8), (8, 4), -30, 0, 360, (20, 180, 40), -1)
+        # Gloss spot
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), 4, (255, 255, 255), -1)
+
+    elif name == "Orange":
+        # Orange sphere
+        cv2.circle(frame, (cx, cy), r, (0, 140, 255), -1)
+        # Dimple texture dots
+        for dx, dy in [(-r//2, 0), (r//3, r//3), (-r//4, r//3), (r//4, -r//4)]:
+            cv2.circle(frame, (cx + dx, cy + dy), 2, (0, 100, 220), -1)
+        # Small green stem cap
+        cv2.circle(frame, (cx, cy - r + 3), 4, (20, 160, 30), -1)
+        # Gloss spot
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), 5, (255, 255, 255), -1)
+
+    elif name == "Watermelon":
+        # Dark green body
+        cv2.circle(frame, (cx, cy), r, (30, 120, 30), -1)
+        # Dark wavy stripes
+        for offset in [-r//2, 0, r//2]:
+            cv2.ellipse(frame, (cx + offset, cy), (r // 4, r - 4), 15, 0, 360, (10, 60, 10), 3)
+        # Gloss spot
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), 6, (120, 255, 120), -1)
+
+    elif name == "Lemon":
+        # Yellow oval shape
+        cv2.ellipse(frame, (cx, cy), (r + 4, r - 3), -20, 0, 360, (0, 230, 255), -1)
+        # Nubs at ends
+        cv2.circle(frame, (cx - r - 2, cy + 3), 4, (0, 200, 240), -1)
+        cv2.circle(frame, (cx + r + 2, cy - 3), 4, (0, 200, 240), -1)
+        # Gloss spot
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), 5, (255, 255, 255), -1)
+
+    elif name == "Grape":
+        # Cluster of purple grapes
+        offsets = [(0, 4), (-r//2, -r//3), (r//2, -r//3), (0, -r//2)]
+        for dx, dy in offsets:
+            cv2.circle(frame, (cx + dx, cy + dy), r // 2 + 2, (160, 20, 140), -1)
+            cv2.circle(frame, (cx + dx - 2, cy + dy - 2), 2, (230, 150, 255), -1)
+        # Green stem
+        cv2.line(frame, (cx, cy - r + 2), (cx + 2, cy - r - 8), (40, 180, 50), 2)
+
+    elif name == "Blueberry":
+        # Deep blue sphere
+        cv2.circle(frame, (cx, cy), r, (180, 60, 20), -1)
+        # Crown top calyx
+        cv2.circle(frame, (cx, cy - r + 5), 5, (120, 30, 10), -1)
+        cv2.circle(frame, (cx, cy - r + 5), 2, (220, 120, 80), -1)
+        # Gloss spot
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), 4, (255, 200, 180), -1)
+
+    else:
+        # Fallback circle
+        cv2.circle(frame, (cx, cy), r, fruit.color, -1)
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), max(3, r // 4), (255, 255, 255), -1)
+
+    # Outer crisp white outline
     cv2.circle(frame, (cx, cy), r, (255, 255, 255), 1)
 
 
 def draw_half(cv2, frame, half):
-    """Draw a sliced half-fruit fading out."""
+    """Draw a sliced half-fruit fading out, showing inner pulp/seeds."""
     cx, cy = int(half.x), int(half.y)
     r = half.radius
     alpha = half.opacity()
 
-    # Dim the color based on opacity
+    # Base color faded by opacity
     color = tuple(int(c * alpha) for c in half.color)
     cv2.circle(frame, (cx, cy), r, color, -1)
-    # Slice line through the middle
+
+    # Inner pulp detail for specific fruits
+    pulp_alpha = alpha * 0.9
+    if half.color == (50, 180, 50):  # Watermelon -> red pulp with seeds
+        pulp_color = (int(40 * pulp_alpha), int(40 * pulp_alpha), int(230 * pulp_alpha))
+        cv2.circle(frame, (cx, cy), int(r * 0.75), pulp_color, -1)
+        # Tiny black seeds
+        for sx, sy in [(-r//4, 0), (r//4, -r//4), (0, r//4)]:
+            cv2.circle(frame, (cx + sx, cy + sy), 2, (0, 0, 0), -1)
+    elif half.color == (10, 10, 220):  # Apple -> pale yellow core
+        core_color = (int(180 * pulp_alpha), int(240 * pulp_alpha), int(255 * pulp_alpha))
+        cv2.circle(frame, (cx, cy), int(r * 0.7), core_color, -1)
+
+    # Slice cut line through the middle
     dx = int(r * math.cos(half.angle))
     dy = int(r * math.sin(half.angle))
-    cv2.line(frame, (cx - dx, cy - dy), (cx + dx, cy + dy), (200, 200, 200), 1)
+    cv2.line(frame, (cx - dx, cy - dy), (cx + dx, cy + dy), (240, 240, 240), 2)
 
 
 def draw_particle(cv2, frame, particle):
