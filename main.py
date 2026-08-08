@@ -41,7 +41,7 @@ APPS = [
     ("rps", "Rock-Paper-Scissors game", rps_game.main),
     ("mood", "Mood Meter (0-100 emotion detection)", mood_meter.main),
     ("react", "Reaction Game (touch targets with your hand)", reaction_game.main),
-    ("drums", "Air Drums (virtual drum kit)", air_drum.main),
+    ("drums", "Air Instruments (Virtual Drums & Piano Keyboard)", air_drum.main),
     ("scan", "QR / Barcode Scanner", qr_scanner.main),
     ("track", "Object Tracker (HSV color tracking)", object_tracker.main),
     ("ascii", "ASCII Art Filter (Matrix / Colorized)", ascii_filter.main),

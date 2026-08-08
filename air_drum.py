@@ -238,10 +238,11 @@ class AudioEngine:
         except Exception:
             return False
         try:
-            pygame.mixer.pre_init(frequency=SAMPLE_RATE, size=-16, channels=2, buffer=512)
+            # Buffer size 128 (~2.9ms latency at 44.1kHz) for instantaneous response
+            pygame.mixer.pre_init(frequency=SAMPLE_RATE, size=-16, channels=2, buffer=128)
             pygame.mixer.init()
             # Enough channels that fast fills and both hands never cut each other off.
-            pygame.mixer.set_num_channels(24)
+            pygame.mixer.set_num_channels(32)
         except Exception as exc:
             print(f"[warn] pygame mixer unavailable ({exc}); trying fallback.")
             return False
@@ -272,11 +273,9 @@ class AudioEngine:
             snd = self._sounds.get(pad["voice"])
             if snd is None:
                 return
-            channel = self._mixer.mixer.find_channel(True)
-            if channel is None:
-                return
-            channel.set_volume(gain)
-            channel.play(snd)
+            ch = snd.play()
+            if ch and gain < 1.0:
+                ch.set_volume(gain)
         elif self.backend == "winsound":
             threading.Thread(
                 target=self._beep, args=(pad["freq"], pad["dur"]), daemon=True
@@ -384,6 +383,28 @@ def find_pad_at(px, py, regions):
 # Drawing
 # ---------------------------------------------------------------------------
 
+class FloatingNote:
+    """A floating note text indicator above hit pads."""
+
+    def __init__(self, x, y, text, color=(255, 255, 255)):
+        self.x = float(x)
+        self.y = float(y)
+        self.text = text
+        self.color = color
+        self.spawn_time = time.time()
+        self.lifetime = 0.7
+        self.vy = -70.0  # float upward
+
+    def update(self, dt):
+        self.y += self.vy * dt
+
+    def is_expired(self):
+        return time.time() - self.spawn_time > self.lifetime
+
+    def opacity(self):
+        return max(0.0, 1.0 - (time.time() - self.spawn_time) / self.lifetime)
+
+
 def _outlined_text(cv2, frame, text, pos, scale, fg, thickness=2):
     """Draw text with a black outline for readability."""
     cv2.putText(frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, (0, 0, 0), thickness + 2)
@@ -417,11 +438,11 @@ def draw_pads(cv2, frame, regions, flash_indices, active_pads):
         _outlined_text(cv2, frame, pad["name"], (text_x, text_y), 0.5, (255, 255, 255), 1)
 
 
-def draw_hud(cv2, frame, hit_count, audio_status=None, mode_name="Drums"):
-    """Render the top HUD bar."""
+def draw_hud(cv2, frame, hit_count, audio_status=None, mode_name="Drums", key_history=None):
+    """Render the top HUD bar and recent key history."""
     h, w = frame.shape[:2]
     overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (w, 50), (0, 0, 0), -1)
+    cv2.rectangle(overlay, (0, 0), (w, 55), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
 
     title = f"Air Instruments [{mode_name}]"
@@ -433,7 +454,13 @@ def draw_hud(cv2, frame, hit_count, audio_status=None, mode_name="Drums"):
     if audio_status:
         muted = audio_status.startswith("silent")
         color = (120, 120, 255) if muted else (160, 200, 160)
-        _outlined_text(cv2, frame, f"Audio: {audio_status}", (20, 68), 0.5, color, 1)
+        _outlined_text(cv2, frame, f"Audio: {audio_status}", (20, 78), 0.5, color, 1)
+
+    # Key history banner across the top under HUD
+    if key_history:
+        recent = list(key_history)[-6:]
+        history_str = " -> ".join([name for name, _c in recent])
+        _outlined_text(cv2, frame, f"Played: {history_str}", (w // 2 - 130, 78), 0.55, (0, 255, 255), 1)
 
 
 def draw_fingertip(cv2, frame, fx, fy, color=(255, 0, 255)):
@@ -477,10 +504,14 @@ def run(args):
     modes = [("Drums", DRUM_PADS), ("Piano", PIANO_PADS)]
     current_mode_idx = 0
 
+    key_history = collections.deque(maxlen=8)
+    floating_notes = []
+
     audio = AudioEngine().start()
 
     window = "Air Instruments (q/Esc to quit, M to toggle Drums/Piano)"
     sized = False
+    prev_time = time.time()
     print(f"Air Instruments starting — audio: {audio.status}. Press 'm' to switch instrument, 'q'/Esc to quit.")
     if audio.backend == "silent":
         print("[warn] no audio backend found; install pygame for drum sounds.")
@@ -493,6 +524,9 @@ def run(args):
 
             frame = cv2.flip(frame, 1)
             h, w = frame.shape[:2]
+            now = time.time()
+            dt = min(now - prev_time, 0.1)
+            prev_time = now
 
             mode_name, active_pads = modes[current_mode_idx]
 
@@ -503,7 +537,6 @@ def run(args):
             regions = get_pad_regions(w, h, len(active_pads))
 
             # Determine which pads are currently flashing
-            now = time.time()
             active_flashes = {k for k, v in flash_until.items() if now < v}
 
             if results.multi_hand_landmarks:
@@ -539,8 +572,25 @@ def run(args):
                             flash_until[pad_idx] = now + 0.15
                             active_flashes.add(pad_idx)
 
+                            # Record key history & floating note popup
+                            key_history.append((pad["name"], pad["color"]))
+                            rx1, ry1, rx2, ry2 = regions[pad_idx]
+                            floating_notes.append(FloatingNote((rx1 + rx2) // 2, ry1 + 30, pad["name"], pad["color"]))
+
+            # Update floating notes
+            for note in floating_notes:
+                note.update(dt)
+            floating_notes = [n for n in floating_notes if not n.is_expired()]
+
             draw_pads(cv2, frame, regions, active_flashes, active_pads)
-            draw_hud(cv2, frame, hit_count, audio.status, mode_name)
+
+            # Draw floating notes
+            for note in floating_notes:
+                alpha = note.opacity()
+                c = tuple(int(ch * alpha) for ch in note.color)
+                _outlined_text(cv2, frame, f"~ {note.text}", (int(note.x) - 30, int(note.y)), 0.7, c, 2)
+
+            draw_hud(cv2, frame, hit_count, audio.status, mode_name, key_history)
 
             if not sized:
                 display.open_window(cv2, window, frame)
