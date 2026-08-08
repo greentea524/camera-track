@@ -162,8 +162,11 @@ class RPSGame:
         if self.phase == self.COUNTDOWN:
             self.stabilizer.update(gesture)
             remaining = self.countdown_seconds - elapsed
+            # Cycle computer animation move every 0.15s during countdown
+            computer_anim = GESTURES[int(elapsed * 6.5) % len(GESTURES)]
             if remaining > 0:
-                return self._view(count=max(1, math.ceil(remaining)), live=gesture)
+                return self._view(count=max(1, math.ceil(remaining)), live=gesture,
+                                  computer_anim=computer_anim)
 
             # Countdown hit zero: lock in the stabilized gesture.
             player = self.stabilizer.current()
@@ -214,11 +217,12 @@ class RPSGame:
         self.stabilizer.clear()
         self.message = ""
 
-    def _view(self, count=None, live=None):
+    def _view(self, count=None, live=None, computer_anim=None):
         return {
             "phase": self.phase,
             "count": count,
             "live": live,
+            "computer_anim": computer_anim,
             "round": self.round,
             "score": self.score,
             "message": self.message,
@@ -330,6 +334,15 @@ def draw_game_overlay(cv2, frame, view):
                         cv2.FONT_HERSHEY_SIMPLEX, 4.0, (0, 255, 255), 8, cv2.LINE_AA)
         cv2.putText(frame, "Show your hand!", (w // 2 - 170, h // 2 + 70),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
+
+        # Computer shuffling move animation overlay
+        if view.get("computer_anim"):
+            anim_move = view["computer_anim"].upper()
+            cv2.rectangle(frame, (w - 240, 65), (w - 15, 115), (0, 0, 0), -1)
+            cv2.rectangle(frame, (w - 240, 65), (w - 15, 115), (0, 255, 255), 2)
+            cv2.putText(frame, f"CPU: {anim_move}...", (w - 225, 100),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
+
         if view["live"]:
             cv2.putText(frame, f"Detected: {view['live']}", (15, h - 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2,
