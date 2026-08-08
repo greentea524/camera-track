@@ -17,6 +17,7 @@ Press 'q' or Esc in the video window to quit.
 """
 
 import argparse
+import collections
 import math
 import sys
 import threading
