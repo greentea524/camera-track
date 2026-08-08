@@ -311,7 +311,7 @@ class StrikeDetector:
     repeated triggers.
     """
 
-    def __init__(self, velocity_threshold=0.8, cooldown=0.25):
+    def __init__(self, velocity_threshold=0.35, cooldown=0.12):
         self.velocity_threshold = velocity_threshold
         self.cooldown = cooldown
         # Velocity of the most recent strike, so callers can scale hit volume.
@@ -493,8 +493,8 @@ def run(args):
     hands = mp_hands.Hands(
         static_image_mode=False,
         max_num_hands=2,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.5,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.4,
     )
 
     # One strike detector per hand (index 0 = first hand, 1 = second)
