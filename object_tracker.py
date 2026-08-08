@@ -20,6 +20,34 @@ WINDOW = "Color Object Tracker"
 # Global variables for mouse callback
 clicked_hsv = None
 
+def get_color_name(hsv_pixel):
+    """Convert an HSV pixel (H: 0-180, S: 0-255, V: 0-255) to a color name."""
+    h, s, v = hsv_pixel
+
+    if v < 40:
+        return "Black"
+    if s < 35:
+        if v > 200:
+            return "White"
+        return "Grey"
+
+    if h < 10 or h >= 170:
+        return "Red"
+    elif h < 22:
+        return "Orange"
+    elif h < 38:
+        return "Yellow"
+    elif h < 80:
+        return "Green"
+    elif h < 105:
+        return "Cyan"
+    elif h < 135:
+        return "Blue"
+    elif h < 155:
+        return "Purple"
+    else:
+        return "Pink"
+
 def get_hsv_ranges(hsv_pixel):
     """Calculate lower and upper HSV threshold boundaries around an HSV pixel.
 
@@ -137,6 +165,8 @@ def run(args):
                 # Draw track indicators
                 cv2.circle(frame, tracked_center, int(radius), (0, 255, 255), 2)
                 cv2.circle(frame, tracked_center, 5, (0, 0, 255), -1)
+                color_name = get_color_name(clicked_hsv)
+                _draw_label(frame, color_name, (tracked_center[0] - 25, tracked_center[1] - int(radius) - 10), font_scale=0.5, fg=(0, 255, 255))
 
         # Add to trail history
         if tracked_center:
@@ -155,7 +185,8 @@ def run(args):
         # HUD
         _draw_label(frame, "CLICK ANYWHERE TO TRACK THAT COLOR", (15, 30), font_scale=0.55, fg=(0, 255, 255))
         h_val, s_val, v_val = clicked_hsv
-        _draw_label(frame, f"Tracking HSV: {h_val}, {s_val}, {v_val}", (15, 60), font_scale=0.5)
+        color_name = get_color_name(clicked_hsv)
+        _draw_label(frame, f"Tracking: {color_name.upper()}  (HSV: {h_val}, {s_val}, {v_val})", (15, 60), font_scale=0.55, fg=(0, 255, 0))
 
         cv2.imshow(WINDOW, frame)
 
@@ -196,6 +227,15 @@ def self_test():
     l_clamp, u_clamp = get_hsv_ranges((90, 10, 10))
     check("S clamped lower bound", l_clamp[1], 40)
     check("V clamped lower bound", l_clamp[2], 40)
+
+    # Color name classifier tests
+    check("Red color name", get_color_name((0, 200, 200)), "Red")
+    check("Green color name", get_color_name((60, 200, 200)), "Green")
+    check("Blue color name", get_color_name((120, 200, 200)), "Blue")
+    check("Yellow color name", get_color_name((30, 200, 200)), "Yellow")
+    check("Purple color name", get_color_name((145, 200, 200)), "Purple")
+    check("White color name", get_color_name((0, 10, 220)), "White")
+    check("Black color name", get_color_name((0, 10, 20)), "Black")
 
     print("\nSelf-test", "passed." if all_ok else "FAILED.")
     return 0 if all_ok else 1
