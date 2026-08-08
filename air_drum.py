@@ -45,6 +45,17 @@ DRUM_PADS = [
     {"name": "Ride",   "voice": "ride",  "freq": 700, "dur": 70,  "color": (255, 200, 50)},
 ]
 
+# Piano key pads (7 diatonic notes C4-B4)
+PIANO_PADS = [
+    {"name": "C4 (Do)",  "voice": "piano_c4", "freq": 261.6, "dur": 300, "color": (255, 100, 100)},
+    {"name": "D4 (Re)",  "voice": "piano_d4", "freq": 293.7, "dur": 300, "color": (255, 180, 100)},
+    {"name": "E4 (Mi)",  "voice": "piano_e4", "freq": 329.6, "dur": 300, "color": (255, 255, 100)},
+    {"name": "F4 (Fa)",  "voice": "piano_f4", "freq": 349.2, "dur": 300, "color": (100, 255, 100)},
+    {"name": "G4 (Sol)", "voice": "piano_g4", "freq": 392.0, "dur": 300, "color": (100, 220, 255)},
+    {"name": "A4 (La)",  "voice": "piano_a4", "freq": 440.0, "dur": 300, "color": (150, 100, 255)},
+    {"name": "B4 (Ti)",  "voice": "piano_b4", "freq": 493.9, "dur": 300, "color": (255, 100, 255)},
+]
+
 # Strike velocity (normalized units/sec) mapped onto playback gain. A strike at
 # the detection threshold plays at MIN_GAIN; VELOCITY_CEILING and above plays
 # at full volume.
@@ -145,6 +156,19 @@ def _synth_ride(rng):
     return _normalize(ping * 0.8 + wash)
 
 
+def _synth_piano_note(freq):
+    """Synthesize acoustic piano note with harmonics and natural decay."""
+    n = int(SAMPLE_RATE * 1.0)
+    t = np.arange(n) / SAMPLE_RATE
+    sound = (
+        np.sin(2 * np.pi * freq * t) * 1.0 +
+        np.sin(2 * np.pi * freq * 2 * t) * 0.40 +
+        np.sin(2 * np.pi * freq * 3 * t) * 0.18 +
+        np.sin(2 * np.pi * freq * 4 * t) * 0.06
+    )
+    return _normalize(sound * _envelope(n, decay=0.35, attack=32))
+
+
 _SYNTHS = {
     "kick": _synth_kick,
     "snare": _synth_snare,
@@ -152,6 +176,13 @@ _SYNTHS = {
     "tom": _synth_tom,
     "crash": _synth_crash,
     "ride": _synth_ride,
+    "piano_c4": lambda rng: _synth_piano_note(261.63),
+    "piano_d4": lambda rng: _synth_piano_note(293.66),
+    "piano_e4": lambda rng: _synth_piano_note(329.63),
+    "piano_f4": lambda rng: _synth_piano_note(349.23),
+    "piano_g4": lambda rng: _synth_piano_note(392.00),
+    "piano_a4": lambda rng: _synth_piano_note(440.00),
+    "piano_b4": lambda rng: _synth_piano_note(493.88),
 }
 
 
@@ -359,10 +390,12 @@ def _outlined_text(cv2, frame, text, pos, scale, fg, thickness=2):
     cv2.putText(frame, text, pos, cv2.FONT_HERSHEY_SIMPLEX, scale, fg, thickness)
 
 
-def draw_pads(cv2, frame, regions, flash_indices):
-    """Draw the drum pad zones on the frame."""
+def draw_pads(cv2, frame, regions, flash_indices, active_pads):
+    """Draw the drum / piano pad zones on the frame."""
     for i, (x1, y1, x2, y2) in enumerate(regions):
-        pad = DRUM_PADS[i]
+        if i >= len(active_pads):
+            break
+        pad = active_pads[i]
         color = pad["color"]
 
         # Flash brighter when hit
@@ -384,15 +417,17 @@ def draw_pads(cv2, frame, regions, flash_indices):
         _outlined_text(cv2, frame, pad["name"], (text_x, text_y), 0.5, (255, 255, 255), 1)
 
 
-def draw_hud(cv2, frame, hit_count, audio_status=None):
+def draw_hud(cv2, frame, hit_count, audio_status=None, mode_name="Drums"):
     """Render the top HUD bar."""
     h, w = frame.shape[:2]
     overlay = frame.copy()
     cv2.rectangle(overlay, (0, 0), (w, 50), (0, 0, 0), -1)
     cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
 
-    _outlined_text(cv2, frame, "Air Drums", (20, 35), 0.9, (0, 220, 220))
-    _outlined_text(cv2, frame, f"Hits: {hit_count}", (w - 180, 35), 0.7, (200, 200, 200))
+    title = f"Air Instruments [{mode_name}]"
+    _outlined_text(cv2, frame, title, (20, 35), 0.9, (0, 220, 220))
+    _outlined_text(cv2, frame, "Press 'M' to switch instrument", (w // 2 - 130, 35), 0.6, (255, 255, 0))
+    _outlined_text(cv2, frame, f"Hits: {hit_count}", (w - 150, 35), 0.7, (200, 200, 200))
 
     # Surface the audio backend so a silent kit is obvious rather than baffling.
     if audio_status:
@@ -439,11 +474,14 @@ def run(args):
     hit_count = 0
     flash_until = {}   # pad_index -> time when flash expires
 
+    modes = [("Drums", DRUM_PADS), ("Piano", PIANO_PADS)]
+    current_mode_idx = 0
+
     audio = AudioEngine().start()
 
-    window = "Air Drums (q/Esc to quit)"
+    window = "Air Instruments (q/Esc to quit, M to toggle Drums/Piano)"
     sized = False
-    print(f"Air Drums starting — audio: {audio.status}. Press 'q' or Esc to quit.")
+    print(f"Air Instruments starting — audio: {audio.status}. Press 'm' to switch instrument, 'q'/Esc to quit.")
     if audio.backend == "silent":
         print("[warn] no audio backend found; install pygame for drum sounds.")
 
@@ -456,11 +494,13 @@ def run(args):
             frame = cv2.flip(frame, 1)
             h, w = frame.shape[:2]
 
+            mode_name, active_pads = modes[current_mode_idx]
+
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             rgb.flags.writeable = False
             results = hands.process(rgb)
 
-            regions = get_pad_regions(w, h, len(DRUM_PADS))
+            regions = get_pad_regions(w, h, len(active_pads))
 
             # Determine which pads are currently flashing
             now = time.time()
@@ -491,16 +531,16 @@ def run(args):
                     detector = detectors[hand_idx]
                     if detector.update(tip.y):
                         pad_idx = find_pad_at(fx, fy, regions)
-                        if pad_idx >= 0:
-                            pad = DRUM_PADS[pad_idx]
+                        if 0 <= pad_idx < len(active_pads):
+                            pad = active_pads[pad_idx]
                             audio.play(pad, detector.last_velocity,
                                        detector.velocity_threshold)
                             hit_count += 1
                             flash_until[pad_idx] = now + 0.15
                             active_flashes.add(pad_idx)
 
-            draw_pads(cv2, frame, regions, active_flashes)
-            draw_hud(cv2, frame, hit_count, audio.status)
+            draw_pads(cv2, frame, regions, active_flashes, active_pads)
+            draw_hud(cv2, frame, hit_count, audio.status, mode_name)
 
             if not sized:
                 display.open_window(cv2, window, frame)
@@ -510,6 +550,8 @@ def run(args):
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), 27):
                 break
+            if key == ord("m"):
+                current_mode_idx = (current_mode_idx + 1) % len(modes)
             if cv2.getWindowProperty(window, cv2.WND_PROP_VISIBLE) < 1:
                 break
     finally:
@@ -584,8 +626,10 @@ def self_test():
     # Synthesised samples
     samples = build_samples()
     check("one sample per voice", sorted(samples) == sorted(_SYNTHS), True)
-    check("every pad has a voice",
+    check("every drum pad has a voice",
           all(p["voice"] in samples for p in DRUM_PADS), True)
+    check("every piano pad has a voice",
+          all(p["voice"] in samples for p in PIANO_PADS), True)
     check("kick is longer than hi-hat",
           len(samples["kick"]) > len(samples["hihat"]), True)
     check("samples stay within [-1, 1]",
