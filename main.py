@@ -36,7 +36,7 @@ import fruit_ninja
 # Ordered menu: number -> (name, description, app entry point). The name is the
 # keyword accepted on the command line; the number is what the menu prompts for.
 APPS = [
-    ("hands", "Finger counter (count 0-10 fingers)", hand_counter.main),
+    ("hands", "Finger counter (multi-person, up to 6 hands)", hand_counter.main),
     ("eyes", "Eye tracker (gaze / blink / drowsiness)", eye_tracker.main),
     ("rps", "Rock-Paper-Scissors game", rps_game.main),
     ("mood", "Mood Meter (0-100 emotion detection)", mood_meter.main),

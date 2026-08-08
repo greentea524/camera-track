@@ -17,9 +17,9 @@ This single script implements KAN-16 through KAN-21:
 
 Usage (run on your own machine — needs camera + display):
 
-    python hand_counter.py                 # default: up to 2 hands, mirror view
+    python hand_counter.py                 # default: up to 6 hands (3 people), mirror view
     python hand_counter.py --camera 1      # use a different camera index
-    python hand_counter.py --max-hands 1   # single-hand mode (0-5)
+    python hand_counter.py --max-hands 2   # 2-hand mode (0-10)
     python hand_counter.py --no-flip       # don't mirror the image
     python hand_counter.py --no-debounce   # show raw per-frame count
     python hand_counter.py --self-test     # verify finger logic, no camera
@@ -196,29 +196,31 @@ def draw_overlay(cv2, frame, total, per_hand):
     """KAN-19/21: render the count (or a no-hand message) onto the frame."""
     h, w = frame.shape[:2]
 
-    # Header band for readability.
-    cv2.rectangle(frame, (0, 0), (w, 70), (0, 0, 0), -1)
+    # Header band for readability (expands if many hands are detected).
+    header_h = max(75, 30 + len(per_hand) * 25) if per_hand else 75
+    cv2.rectangle(frame, (0, 0), (w, header_h), (0, 0, 0), -1)
 
     if per_hand:
-        text = f"Fingers: {total}"
+        text = f"Fingers: {total}  (Hands: {len(per_hand)})"
         color = (0, 255, 0)
     else:
         # KAN-21: graceful no-hand state.
-        text = "No hand"
+        text = "No hands detected"
         color = (0, 200, 255)
 
     cv2.putText(
-        frame, text, (15, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.4, color, 3, cv2.LINE_AA
+        frame, text, (15, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3, cv2.LINE_AA
     )
 
     # Per-hand breakdown in the corner when hands are present.
     for i, (label, n) in enumerate(per_hand):
+        hand_num = i + 1
         cv2.putText(
             frame,
-            f"{label}: {n}",
-            (w - 200, 30 + i * 30),
+            f"H{hand_num} ({label[0]}): {n}",
+            (w - 180, 25 + i * 25),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
+            0.6,
             (255, 255, 255),
             2,
             cv2.LINE_AA,
@@ -292,6 +294,25 @@ def self_test():
         flag = "ok  " if ok else "FAIL"
         print(f"[{flag}] {desc:<22} expected {expected}, got {got}  {states}")
 
+    # Multi-person multi-hand check (6 open hands = 30 fingers)
+    class MockResults:
+        def __init__(self, hands, labels):
+            class LMList:
+                def __init__(self, landmarks):
+                    self.landmark = landmarks
+            class Classif:
+                def __init__(self, label):
+                    self.classification = [type('Cls', (), {'label': label})()]
+            self.multi_hand_landmarks = [LMList(h) for h in hands]
+            self.multi_handedness = [Classif(l) for l in labels]
+
+    six_hands = [_make_hand(thumb=True, index=True, middle=True, ring=True, pinky=True, right=(i % 2 == 0)) for i in range(6)]
+    labels = ["Right" if i % 2 == 0 else "Left" for i in range(6)]
+    tot_6, per_6 = count_hands(MockResults(six_hands, labels), None)
+    ok_6 = tot_6 == 30 and len(per_6) == 6
+    all_ok = all_ok and ok_6
+    print(f"[{'ok  ' if ok_6 else 'FAIL'}] 6 hands (3 people 30 fingers) expected 30, got {tot_6}")
+
     print("\nSelf-test", "passed." if all_ok else "FAILED.")
     return 0 if all_ok else 1
 
@@ -302,7 +323,7 @@ def main(argv=None):
     )
     parser.add_argument("--camera", type=int, default=0, help="Camera index (default 0).")
     parser.add_argument(
-        "--max-hands", type=int, default=2, help="Max hands to detect (default 2)."
+        "--max-hands", type=int, default=6, help="Max hands to detect (default 6 for 3 people)."
     )
     parser.add_argument(
         "--window", type=int, default=5, help="Debounce window size in frames (default 5)."
