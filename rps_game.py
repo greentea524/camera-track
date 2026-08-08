@@ -312,6 +312,44 @@ def run_game(args):
     return 0
 
 
+def draw_gesture_icon(cv2, frame, gesture, cx, cy, r=35):
+    """Render a visual vector illustration for Rock, Paper, or Scissors."""
+    gesture = gesture.lower()
+
+    if gesture == "rock":
+        # Rock / Fist: Rounded boulder with knuckle detail
+        cv2.circle(frame, (cx, cy), r, (120, 120, 120), -1)
+        cv2.circle(frame, (cx - r // 3, cy - r // 3), r // 3, (190, 190, 190), -1)
+        # Knuckle lines
+        for i in range(-1, 2):
+            cv2.line(frame, (cx + i * 10 - 5, cy), (cx + i * 10 + 5, cy + 10), (70, 70, 70), 2)
+        cv2.circle(frame, (cx, cy), r, (255, 255, 255), 2)
+
+    elif gesture == "paper":
+        # Paper / Open Palm: Palm base + 4 fingers
+        # Palm
+        cv2.rectangle(frame, (cx - r // 2, cy - r // 4), (cx + r // 2, cy + r // 2), (230, 245, 255), -1)
+        # 4 Fingers extending up
+        for i, dx in enumerate([-r // 3, -r // 9, r // 9, r // 3]):
+            h_len = r // 2 if i in (0, 3) else r * 2 // 3
+            cv2.rectangle(frame, (cx + dx - 4, cy - r // 4 - h_len), (cx + dx + 4, cy - r // 4), (230, 245, 255), -1)
+            cv2.rectangle(frame, (cx + dx - 4, cy - r // 4 - h_len), (cx + dx + 4, cy - r // 4), (0, 200, 255), 1)
+        # Palm outline
+        cv2.rectangle(frame, (cx - r // 2, cy - r // 4), (cx + r // 2, cy + r // 2), (0, 200, 255), 2)
+
+    elif gesture == "scissors":
+        # Scissors: Crossing blades with handle loops
+        # Blade 1 (top-left to bottom-right)
+        cv2.line(frame, (cx - r + 5, cy - r + 5), (cx + r - 5, cy + r - 5), (220, 220, 220), 5)
+        # Blade 2 (top-right to bottom-left)
+        cv2.line(frame, (cx + r - 5, cy - r + 5), (cx - r + 5, cy + r - 5), (220, 220, 220), 5)
+        # Pivot screw
+        cv2.circle(frame, (cx, cy), 4, (0, 255, 255), -1)
+        # Handle loops
+        cv2.circle(frame, (cx - r + 6, cy + r - 6), 9, (50, 50, 220), 3)
+        cv2.circle(frame, (cx + r - 6, cy + r - 6), 9, (50, 50, 220), 3)
+
+
 def draw_game_overlay(cv2, frame, view):
     """Render the score, countdown, live gesture, and round result."""
     h, w = frame.shape[:2]
@@ -335,13 +373,16 @@ def draw_game_overlay(cv2, frame, view):
         cv2.putText(frame, "Show your hand!", (w // 2 - 170, h // 2 + 70),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2, cv2.LINE_AA)
 
-        # Computer shuffling move animation overlay
+        # Computer shuffling move animation overlay with vector drawing
         if view.get("computer_anim"):
-            anim_move = view["computer_anim"].upper()
-            cv2.rectangle(frame, (w - 240, 65), (w - 15, 115), (0, 0, 0), -1)
-            cv2.rectangle(frame, (w - 240, 65), (w - 15, 115), (0, 255, 255), 2)
-            cv2.putText(frame, f"CPU: {anim_move}...", (w - 225, 100),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2, cv2.LINE_AA)
+            anim_move = view["computer_anim"]
+            # Draw CPU box upper right
+            cv2.rectangle(frame, (w - 280, 60), (w - 15, 175), (0, 0, 0), -1)
+            cv2.rectangle(frame, (w - 280, 60), (w - 15, 175), (0, 255, 255), 2)
+            cv2.putText(frame, f"CPU: {anim_move.upper()}", (w - 265, 90),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
+            # Draw visual gesture icon
+            draw_gesture_icon(cv2, frame, anim_move, w - 145, 132, r=28)
 
         if view["live"]:
             cv2.putText(frame, f"Detected: {view['live']}", (15, h - 20),
@@ -352,10 +393,14 @@ def draw_game_overlay(cv2, frame, view):
         if rnd:
             colors = {"win": (0, 255, 0), "lose": (0, 0, 255), "draw": (0, 255, 255)}
             labels = {"win": "YOU WIN", "lose": "YOU LOSE", "draw": "DRAW"}
-            cv2.putText(frame, f"You: {rnd['player']}    CPU: {rnd['computer']}",
-                        (w // 2 - 240, h // 2 - 20), cv2.FONT_HERSHEY_SIMPLEX,
+            cv2.putText(frame, f"You: {rnd['player'].upper()}    CPU: {rnd['computer'].upper()}",
+                        (w // 2 - 240, h // 2 - 40), cv2.FONT_HERSHEY_SIMPLEX,
                         1.0, (255, 255, 255), 2, cv2.LINE_AA)
-            cv2.putText(frame, labels[rnd["result"]], (w // 2 - 140, h // 2 + 55),
+
+            # Draw CPU gesture icon on result screen
+            draw_gesture_icon(cv2, frame, rnd['computer'], w // 2 + 160, h // 2 - 45, r=32)
+
+            cv2.putText(frame, labels[rnd["result"]], (w // 2 - 140, h // 2 + 65),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.6, colors[rnd["result"]], 4,
                         cv2.LINE_AA)
             cv2.putText(frame, "Press SPACE to play again", (w // 2 - 220, h - 30),
