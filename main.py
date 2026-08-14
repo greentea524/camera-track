@@ -40,7 +40,7 @@ APPS = [
     ("eyes", "Eye tracker (multi-person, up to 3 faces)", eye_tracker.main),
     ("rps", "Rock-Paper-Scissors game", rps_game.main),
     ("mood", "Mood Meter (0-100 emotion detection)", mood_meter.main),
-    ("react", "Reaction Game (touch targets with your hand)", reaction_game.main),
+    ("react", "Reaction Game (multi-hand dual-play, touch targets)", reaction_game.main),
     ("drums", "Air Instruments (Virtual Drums & Piano Keyboard)", air_drum.main),
     ("scan", "QR / Barcode Scanner", qr_scanner.main),
     ("track", "Object Tracker (HSV color tracking)", object_tracker.main),

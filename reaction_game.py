@@ -4,12 +4,14 @@ reaction_game.py — hand-gesture reaction game using OpenCV + MediaPipe.
 
 Targets spawn at random positions on the webcam feed. Touch them with your
 index fingertip to score points before the timer runs out. The game gets
-progressively faster as your score climbs.
+progressively faster as your score climbs, and both hands are tracked so you
+can play two-handed (or duel a friend).
 
-Issue: #31
+Issue: #31 (original), #43 (multi-hand tracking + collision detection)
 
 Usage:
-    python reaction_game.py                # default settings
+    python reaction_game.py                # default settings (2 hands)
+    python reaction_game.py --max-hands 1  # single-hand play
     python reaction_game.py --camera 1     # different camera index
     python reaction_game.py --self-test    # verify game logic, no camera
 
@@ -79,7 +81,7 @@ class ReactionGame:
         return max(1.0, 3.0 - self.score * 0.12)
 
     # -- logic ---------------------------------------------------------------
-    def update(self, frame_w, frame_h, finger_x=None, finger_y=None):
+    def update(self, frame_w, frame_h, finger_x=None, finger_y=None, fingers=None):
         """Call once per frame. Returns a status string for the HUD."""
         if self.game_over:
             return "GAME OVER"
@@ -106,13 +108,19 @@ class ReactionGame:
                 return "GAME OVER"
             return "Missed!"
 
-        # Check hit.
+        # Combine single fingertip params into fingers list
+        all_fingers = list(fingers) if fingers else []
         if finger_x is not None and finger_y is not None:
-            if self.target.contains(finger_x, finger_y):
-                self.score += 1
-                self.target = None
-                self._last_spawn = now
-                return "Hit!"
+            all_fingers.append((finger_x, finger_y))
+
+        # Check hit across all active fingertips.
+        if all_fingers:
+            for fx, fy in all_fingers:
+                if fx is not None and fy is not None and self.target.contains(fx, fy):
+                    self.score += 1
+                    self.target = None
+                    self._last_spawn = now
+                    return "Hit!"
 
         return ""
 
@@ -173,13 +181,16 @@ def draw_target(cv2, frame, target):
     cv2.circle(frame, (target.x, target.y), 5, (255, 255, 255), -1)
 
 
-def draw_fingertip(cv2, frame, fx, fy):
-    """Draw a crosshair at the detected index fingertip."""
-    if fx is None:
+HAND_COLORS = [(255, 0, 255), (0, 255, 255), (0, 255, 0), (255, 255, 0)]
+
+def draw_fingertip(cv2, frame, fx, fy, hand_idx=0):
+    """Draw a crosshair at a detected index fingertip."""
+    if fx is None or fy is None:
         return
-    cv2.circle(frame, (fx, fy), 14, (255, 0, 255), 2)
-    cv2.line(frame, (fx - 18, fy), (fx + 18, fy), (255, 0, 255), 1)
-    cv2.line(frame, (fx, fy - 18), (fx, fy + 18), (255, 0, 255), 1)
+    color = HAND_COLORS[hand_idx % len(HAND_COLORS)]
+    cv2.circle(frame, (fx, fy), 14, color, 2)
+    cv2.line(frame, (fx - 18, fy), (fx + 18, fy), color, 1)
+    cv2.line(frame, (fx, fy - 18), (fx, fy + 18), color, 1)
 
 
 def draw_game_over(cv2, frame, game):
@@ -214,15 +225,15 @@ def run(args):
 
     hands = mp_hands.Hands(
         static_image_mode=False,
-        max_num_hands=1,
-        min_detection_confidence=0.7,
+        max_num_hands=args.max_hands,
+        min_detection_confidence=0.6,
         min_tracking_confidence=0.5,
     )
 
     game = ReactionGame()
     window = "Reaction Game (q/Esc to quit)"
     sized = False
-    print("Reaction Game starting — press 'q' or Esc to quit.")
+    print(f"Reaction Game starting (max {args.max_hands} hands) — press 'q' or Esc to quit.")
 
     try:
         while True:
@@ -238,9 +249,11 @@ def run(args):
             rgb.flags.writeable = False
             results = hands.process(rgb)
 
-            finger_x, finger_y = None, None
+            fingers = []
             if results.multi_hand_landmarks:
-                for hand_lm in results.multi_hand_landmarks:
+                for hand_idx, hand_lm in enumerate(results.multi_hand_landmarks):
+                    if hand_idx >= args.max_hands:
+                        break
                     # Draw hand skeleton
                     mp_draw.draw_landmarks(
                         frame, hand_lm, mp_hands.HAND_CONNECTIONS,
@@ -249,22 +262,24 @@ def run(args):
                     )
                     # Get index fingertip in pixel coords
                     tip = hand_lm.landmark[INDEX_TIP]
-                    finger_x = int(tip.x * w)
-                    finger_y = int(tip.y * h)
+                    fx = int(tip.x * w)
+                    fy = int(tip.y * h)
+                    fingers.append((fx, fy))
 
             # Update game state
-            status = game.update(w, h, finger_x, finger_y)
+            status = game.update(w, h, fingers=fingers)
 
             # Draw everything
             draw_target(cv2, frame, game.target)
-            draw_fingertip(cv2, frame, finger_x, finger_y)
+            for idx, (fx, fy) in enumerate(fingers):
+                draw_fingertip(cv2, frame, fx, fy, hand_idx=idx)
             draw_hud(cv2, frame, game, status)
 
             if game.game_over:
                 draw_game_over(cv2, frame, game)
 
             if not sized:
-                display.open_window(cv2, window, frame)
+                display.open_window(cv2, window, frame, args.display_scale)
                 sized = True
             cv2.imshow(window, frame)
 
@@ -315,6 +330,27 @@ def self_test():
     g.score = 20
     check("radius has a floor of 30", g.target_radius, 30)
 
+    # Multi-hand update test
+    g.score = 0
+    g.target = Target(100, 100, 40, 5.0)
+    # Hand 1 misses at (200, 200), Hand 2 hits at (105, 105)
+    st = g.update(640, 480, fingers=[(200, 200), (105, 105)])
+    check("multi-hand hit registered", st, "Hit!")
+    check("score incremented by multi-hand hit", g.score, 1)
+
+    # Multi-hand miss: no fingertip inside, target survives, score unchanged.
+    g.score = 0
+    g.target = Target(100, 100, 40, 5.0)
+    st = g.update(640, 480, fingers=[(300, 300), (400, 300)])
+    check("multi-hand miss leaves target", st, "")
+    check("score unchanged on multi-hand miss", g.score, 0)
+    check("target still alive on miss", g.target is not None, True)
+
+    # Backward-compatible single-fingertip args still work.
+    st = g.update(640, 480, finger_x=105, finger_y=105)
+    check("single-fingertip args still hit", st, "Hit!")
+    check("score incremented via legacy args", g.score, 1)
+
     # Restart
     g.restart()
     check("restart resets score", g.score, 0)
@@ -338,6 +374,8 @@ def main(argv=None):
         description="Hand-gesture reaction game (OpenCV + MediaPipe).")
     parser.add_argument("--camera", type=int, default=0,
                         help="Camera index (default 0).")
+    parser.add_argument("--max-hands", type=int, default=2,
+                        help="Max hands to track (default 2 for dual-hand play).")
     parser.add_argument("--display-scale", type=float, default=1.5,
                         help="Window scale factor (default 1.5).")
     args = parser.parse_args(argv)
