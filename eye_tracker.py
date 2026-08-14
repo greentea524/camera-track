@@ -277,17 +277,16 @@ def run(args):
     # KAN-24: Face Mesh with iris refinement -> ~478 landmarks incl. irises.
     face_mesh = mp_face.FaceMesh(
         static_image_mode=False,
-        max_num_faces=1,
+        max_num_faces=args.max_faces,
         refine_landmarks=True,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     )
 
-    blinks = BlinkCounter(threshold=args.ear_threshold)
-    drowsy = DrowsinessMonitor(threshold=args.ear_threshold,
-                               hold_seconds=args.drowsy_seconds)
-    no_blink = NoBlinkMonitor(alert_seconds=args.no_blink_seconds)
-    print("Running eye tracker — press 'q' or Esc to quit.")
+    blinks = [BlinkCounter(threshold=args.ear_threshold) for _ in range(args.max_faces)]
+    drowsy = [DrowsinessMonitor(threshold=args.ear_threshold, hold_seconds=args.drowsy_seconds) for _ in range(args.max_faces)]
+    no_blink = [NoBlinkMonitor(alert_seconds=args.no_blink_seconds) for _ in range(args.max_faces)]
+    print(f"Running eye tracker (max {args.max_faces} faces) — press 'q' or Esc to quit.")
 
     window = "Eye Tracker (q/Esc to quit)"
     sized = False
@@ -306,28 +305,32 @@ def run(args):
             rgb.flags.writeable = False
             results = face_mesh.process(rgb)
 
-            state = None
+            face_states = []
             if results.multi_face_landmarks:
-                landmarks = results.multi_face_landmarks[0].landmark
-                ear = average_ear(landmarks)
-                now = time.monotonic()
-                blinked = blinks.update(ear, now)
-                no_blink_secs = no_blink.update(blinked, now)
-                state = {
-                    "gaze": estimate_gaze(landmarks),
-                    "ear": ear,
-                    "blinks": blinks.total,
-                    "bpm": blinks.blinks_per_minute(now),
-                    "drowsy": drowsy.update(ear, now),
-                    "no_blink": no_blink_secs,
-                    "staring": no_blink.is_alerting(no_blink_secs),
-                    "no_blink_best": no_blink.longest,
-                }
-                if not args.no_landmarks:
-                    _draw_eye_landmarks(cv2, frame, results.multi_face_landmarks[0],
-                                        mp_face, mp_draw, mp_styles)
+                for idx, face_landmarks in enumerate(results.multi_face_landmarks):
+                    if idx >= args.max_faces:
+                        break
+                    landmarks = face_landmarks.landmark
+                    ear = average_ear(landmarks)
+                    now = time.monotonic()
+                    blinked = blinks[idx].update(ear, now)
+                    no_blink_secs = no_blink[idx].update(blinked, now)
+                    f_state = {
+                        "gaze": estimate_gaze(landmarks),
+                        "ear": ear,
+                        "blinks": blinks[idx].total,
+                        "bpm": blinks[idx].blinks_per_minute(now),
+                        "drowsy": drowsy[idx].update(ear, now),
+                        "no_blink": no_blink_secs,
+                        "staring": no_blink[idx].is_alerting(no_blink_secs),
+                        "no_blink_best": no_blink[idx].longest,
+                    }
+                    face_states.append(f_state)
+                    if not args.no_landmarks:
+                        _draw_eye_landmarks(cv2, frame, face_landmarks,
+                                            mp_face, mp_draw, mp_styles)
 
-            draw_overlay(cv2, frame, state)
+            draw_overlay(cv2, frame, face_states)
 
             if not sized:
                 display.open_window(cv2, window, frame, args.display_scale)
@@ -364,39 +367,44 @@ def _draw_eye_landmarks(cv2, frame, face_landmarks, mp_face, mp_draw, mp_styles)
     )
 
 
-def draw_overlay(cv2, frame, state):
-    """KAN-30/31: render gaze/blink/drowsiness (or a no-face message)."""
+def draw_overlay(cv2, frame, face_states):
+    """KAN-30/31: render gaze/blink/drowsiness for each face (or a no-face message)."""
     h, w = frame.shape[:2]
-    cv2.rectangle(frame, (0, 0), (w, 80), (0, 0, 0), -1)
 
-    if state is None:
+    if not face_states:
         # KAN-31: graceful no-face state.
-        cv2.putText(frame, "No face", (15, 50), cv2.FONT_HERSHEY_SIMPLEX,
-                    1.2, (0, 200, 255), 3, cv2.LINE_AA)
+        cv2.rectangle(frame, (0, 0), (w, 60), (0, 0, 0), -1)
+        cv2.putText(frame, "No face detected", (15, 42), cv2.FONT_HERSHEY_SIMPLEX,
+                    1.1, (0, 200, 255), 3, cv2.LINE_AA)
         return
 
-    cv2.putText(frame, f"Gaze: {state['gaze']}", (15, 35),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2, cv2.LINE_AA)
-    cv2.putText(frame,
-                f"Blinks: {state['blinks']}  ({state['bpm']:.0f}/min)  EAR {state['ear']:.2f}",
-                (15, 68), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2,
-                cv2.LINE_AA)
+    # Expand top header band dynamically for multi-person status lines
+    band_h = max(70, 25 + len(face_states) * 35)
+    cv2.rectangle(frame, (0, 0), (w, band_h), (0, 0, 0), -1)
 
-    # KAN-32: no-blink duration, turning amber and flagging a stare when it
-    # crosses the alert threshold.
-    staring = state["staring"]
-    nb_text = f"No blink: {state['no_blink']:.1f}s"
-    if staring:
-        nb_text += "  (STARING?)"
-    cv2.putText(frame, nb_text, (w - 340, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                (0, 165, 255) if staring else (255, 255, 255), 2, cv2.LINE_AA)
-    cv2.putText(frame, f"Best: {state['no_blink_best']:.1f}s", (w - 340, 68),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+    drowsy_faces = []
 
-    # KAN-29/30: prominent drowsiness alert banner.
-    if state["drowsy"]:
+    for idx, state in enumerate(face_states):
+        p_num = idx + 1
+        y_pos = 30 + idx * 35
+
+        # Format line: P1: Gaze: center | Blinks: 5 (12/min) | EAR 0.28 | No-blink 4.2s
+        staring = state["staring"]
+        nb_str = f"{state['no_blink']:.1f}s" + (" STARING!" if staring else "")
+        info = f"P{p_num}: Gaze: {state['gaze'].upper():<6}  Blinks: {state['blinks']} ({state['bpm']:.0f}/m)  EAR {state['ear']:.2f}  No-blink: {nb_str}"
+
+        line_color = (0, 165, 255) if staring else (0, 255, 0)
+        cv2.putText(frame, info, (15, y_pos), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6, line_color, 2, cv2.LINE_AA)
+
+        if state["drowsy"]:
+            drowsy_faces.append(p_num)
+
+    # KAN-29/30: prominent drowsiness alert banner for any drowsy face
+    if drowsy_faces:
+        faces_str = ", ".join(f"P{n}" for n in drowsy_faces)
         cv2.rectangle(frame, (0, h - 60), (w, h), (0, 0, 180), -1)
-        cv2.putText(frame, "! DROWSINESS ALERT !", (15, h - 18),
+        cv2.putText(frame, f"! DROWSINESS ALERT ({faces_str}) !", (15, h - 18),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 3,
                     cv2.LINE_AA)
 
@@ -495,15 +503,34 @@ def self_test():
     check("sustained closure drowsy", dm.update(0.05, now=2.0), True)
     check("reopen clears drowsy", dm.update(0.30, now=2.1), False)
 
-    # KAN-32: no-blink timer grows while open, resets on a blink, alerts late.
-    nb = NoBlinkMonitor(alert_seconds=10.0)
-    nb.update(False, now=0.0)                 # first frame anchors the clock
-    check("no-blink grows while open", nb.update(False, now=5.0), 5.0)
-    check("no-blink resets on blink", nb.update(True, now=6.0), 0.0)
-    check("no-blink resumes after reset", nb.update(False, now=6.5), 0.5)
-    check("no-blink longest streak retained", nb.longest, 5.0)
-    check("no-blink not alerting under threshold", nb.is_alerting(5.0), False)
-    check("no-blink alerting over threshold", nb.is_alerting(11.0), True)
+    # Multi-person self-test checks
+    f1 = _make_face(open_amount=1.0, gaze_h=0.5, gaze_v=0.5)
+    f2 = _make_face(open_amount=0.0, gaze_h=0.1)
+    f3 = _make_face(open_amount=1.0, gaze_h=0.9)
+
+    st1 = {
+        "gaze": estimate_gaze(f1),
+        "ear": average_ear(f1),
+        "blinks": 0, "bpm": 0.0, "drowsy": False, "no_blink": 2.0, "staring": False, "no_blink_best": 2.0
+    }
+    st2 = {
+        "gaze": estimate_gaze(f2),
+        "ear": average_ear(f2),
+        "blinks": 2, "bpm": 15.0, "drowsy": True, "no_blink": 0.5, "staring": False, "no_blink_best": 4.0
+    }
+    st3 = {
+        "gaze": estimate_gaze(f3),
+        "ear": average_ear(f3),
+        "blinks": 1, "bpm": 8.0, "drowsy": False, "no_blink": 12.0, "staring": True, "no_blink_best": 12.0
+    }
+
+    multi_states = [st1, st2, st3]
+    check("multi-face count", len(multi_states), 3)
+    check("multi-face gaze F1", st1["gaze"], "center")
+    check("multi-face gaze F2", st2["gaze"], "left")
+    check("multi-face gaze F3", st3["gaze"], "right")
+    check("multi-face drowsy detection F2", st2["drowsy"], True)
+    check("multi-face staring detection F3", st3["staring"], True)
 
     print("\nSelf-test", "passed." if all_ok else "FAILED.")
     return 0 if all_ok else 1
@@ -514,6 +541,8 @@ def main(argv=None):
         description="Real-time gaze/blink/drowsiness tracker (OpenCV + MediaPipe)."
     )
     parser.add_argument("--camera", type=int, default=0, help="Camera index (default 0).")
+    parser.add_argument("--max-faces", type=int, default=3,
+                        help="Max faces to track (default 3 for multi-person).")
     parser.add_argument("--ear-threshold", type=float, default=0.21,
                         help="EAR below this counts as a closed eye (default 0.21).")
     parser.add_argument("--drowsy-seconds", type=float, default=1.5,

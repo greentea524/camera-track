@@ -37,7 +37,7 @@ import fruit_ninja
 # keyword accepted on the command line; the number is what the menu prompts for.
 APPS = [
     ("hands", "Finger counter (multi-person, up to 6 hands)", hand_counter.main),
-    ("eyes", "Eye tracker (gaze / blink / drowsiness)", eye_tracker.main),
+    ("eyes", "Eye tracker (multi-person, up to 3 faces)", eye_tracker.main),
     ("rps", "Rock-Paper-Scissors game", rps_game.main),
     ("mood", "Mood Meter (0-100 emotion detection)", mood_meter.main),
     ("react", "Reaction Game (touch targets with your hand)", reaction_game.main),
